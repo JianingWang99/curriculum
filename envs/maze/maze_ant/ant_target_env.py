@@ -19,6 +19,7 @@ class AntEnv(MujocoEnv, Serializable):
         pos = self.model.data.qpos.flat[:-2]
         vel = self.model.data.qvel.flat[:-2]
         current_goal = self.model.data.qpos.flat[-2:].reshape(-1)
+        
         non_goal_obs = np.concatenate([
             pos, vel,
             np.clip(self.model.data.cfrc_ext, -1, 1).flat,

@@ -1,3 +1,10 @@
+import os
+import csv
+
+import click
+import numpy as np
+import json
+
 from rllab.algos.base import RLAlgorithm
 from rllab.misc.overrides import overrides
 from rllab.misc import special
@@ -36,15 +43,17 @@ class SimpleReplayPool(object):
         )
         self._rewards = np.zeros(max_pool_size)
         self._terminals = np.zeros(max_pool_size, dtype='uint8')
+        self._epochs = np.zeros(max_pool_size)
         self._bottom = 0
         self._top = 0
         self._size = 0
 
-    def add_sample(self, observation, action, reward, terminal):
+    def add_sample(self, observation, action, reward, terminal, epoch):
         self._observations[self._top] = observation
         self._actions[self._top] = action
         self._rewards[self._top] = reward
         self._terminals[self._top] = terminal
+        self._epochs[self._top] = epoch
         self._top = (self._top + 1) % self._max_pool_size
         if self._size >= self._max_pool_size:
             self._bottom = (self._bottom + 1) % self._max_pool_size
@@ -77,14 +86,27 @@ class SimpleReplayPool(object):
             next_observations=self._observations[transition_indices]
         )
 
+    def replay_her(self, epoch, epoch_length):
+        if epoch == 0:
+            indices = np.array([x for x in range(epoch_length)])
+        else:
+            indices = np.zeros(epoch_length, dtype='uint64')
+            indices, = np.where(self._epochs == epoch)
+        
+        return dict(
+            observations=self._observations[indices],
+            actions=self._actions[indices],
+            terminals=self._terminals[indices]
+        )  
+
     @property
     def size(self):
         return self._size
 
 
-class DDPG(RLAlgorithm):
+class HER(RLAlgorithm):
     """
-    Modified Deep Deterministic Policy Gradient for HER.  
+    Hindsight Experience Replay on Deep Deterministic Policy Gradient.
     """
 
     def __init__(
@@ -113,7 +135,8 @@ class DDPG(RLAlgorithm):
             scale_reward=1.0,
             include_horizon_terminal_transitions=False,
             plot=False,
-            pause_for_plot=False):
+            pause_for_plot=False,
+            replay_strategy='future'):
         """
         :param env: Environment
         :param policy: Policy
@@ -140,6 +163,7 @@ class DDPG(RLAlgorithm):
         horizon was reached. This might make the Q value back up less stable for certain tasks.
         :param plot: Whether to visualize the policy performance after each eval_interval.
         :param pause_for_plot: Whether to pause before continuing when plotting.
+        :param replay_strategy: HER replay strategy.
         :return:
         """
         self.env = env
@@ -186,10 +210,53 @@ class DDPG(RLAlgorithm):
 
         self.opt_info = None
 
+        self.replay_strategy = replay_strategy
+
     def start_worker(self):
         parallel_sampler.populate_task(self.env, self.policy)
         if self.plot:
             plotter.init_plot(self.env, self.policy)
+
+    
+    def get_current_goal(self):
+        """ Get the current goal for the wrapped environment. """
+        if hasattr(self.env, 'current_goal'):
+            return self.env.current_goal
+        elif hasattr(self.env, 'wrapped_env'):
+            return self.env.wrapped_env.current_goal
+        else:
+            raise NotImplementedError('Unsupported environment')
+
+
+    def her_replay(self, epoch, pool):
+        replay_batch = pool.replay_her(epoch, self.epoch_length)
+        
+        replay_observations = replay_batch["observations"]
+        replay_actions = replay_batch["actions"]
+        replay_terminals = replay_batch["terminals"]
+
+        # sample the goals for replay
+        #choose final state as goal
+        achieved_observation_index = len(replay_actions) - 1
+        achieved_observation = replay_observations[achieved_observation_index]
+        achieved_observation = achieved_observation[:-2]
+        #get the agent position
+        achieved_goal = achieved_observation[-3: -1]
+        logger.log(" Achieved Goal %s" % ' '.join(map(str, achieved_goal)))
+        # update achieved goal to the environment
+        self.env.update_goal(goal=achieved_goal)
+
+        new_observation = np.zeros(replay_observations[0].shape)
+
+        # print("her replay begin.")
+        for i in range(len(replay_actions)):
+            new_observation = replay_observations[i][:-2]
+            new_reward = 1.0 * self.env.is_goal_reached(new_observation)
+            # print("her replay new_reward: ", new_reward)
+            new_observation = np.concatenate([new_observation, np.array(achieved_goal)])
+
+            pool.add_sample(new_observation, replay_actions[i], new_reward, replay_terminals[i], epoch)
+            
 
     @overrides
     def train(self):
@@ -197,8 +264,10 @@ class DDPG(RLAlgorithm):
         pool = SimpleReplayPool(
             max_pool_size=self.replay_pool_size,
             observation_dim=self.env.observation_space.flat_dim,
-            action_dim=self.env.action_space.flat_dim,
+            action_dim=self.env.action_space.flat_dim,   
         )
+        
+    
         self.start_worker()
 
         self.init_opt()
@@ -207,16 +276,13 @@ class DDPG(RLAlgorithm):
         path_return = 0
         terminal = False
         observation = self.env.reset()
-
-        reward_list = []
+        desired_goal = self.get_current_goal()
         sample_policy = pickle.loads(pickle.dumps(self.policy))
-
-        one_goal_mode = True
 
         for epoch in range(self.n_epochs):
             logger.push_prefix('epoch #%d | ' % epoch)
             logger.log("Training started")
-            sum_reward = 0
+            
             for epoch_itr in pyprind.prog_bar(range(self.epoch_length)):
                 self.env.render()
                 # Execute policy
@@ -232,8 +298,9 @@ class DDPG(RLAlgorithm):
                     path_return = 0
                 action = self.es.get_action(itr, observation, policy=sample_policy)  # qf=qf)
 
-                next_observation, reward, terminal, _ = self.env.step(action)
-                sum_reward = sum_reward + reward
+                next_observation, reward, terminal, info = self.env.step(action)
+
+                reward = info['goal_reached'] # if reach the goal then reward is 1 else 0.
                 
                 path_length += 1
                 path_return += reward
@@ -242,11 +309,18 @@ class DDPG(RLAlgorithm):
                     terminal = True
                     # only include the terminal transition in this case if the flag was set
                     if self.include_horizon_terminal_transitions:
-                        pool.add_sample(observation, action, reward * self.scale_reward, terminal)
+                        pool.add_sample(observation, action, reward * self.scale_reward, terminal, epoch)
                 else:
-                    pool.add_sample(observation, action, reward * self.scale_reward, terminal)
+                    pool.add_sample(observation, action, reward * self.scale_reward, terminal, epoch)
 
+                # achieved_observation = observation
                 observation = next_observation
+
+                if epoch_itr == self.epoch_length - 1:
+                    self.her_replay(epoch, pool)
+                    #change the goal back to desired goal
+                    self.env.update_goal(goal=desired_goal) 
+
 
                 if pool.size >= self.min_pool_size:
                     for update_itr in range(self.n_updates_per_sample):
@@ -257,9 +331,7 @@ class DDPG(RLAlgorithm):
 
                 itr += 1
             
-            reward_list.append(sum_reward)
-            print("epoch: ", epoch,"ddpg reward_list", reward_list)
-
+           
             logger.log("Training finished")
             if pool.size >= self.min_pool_size:
                 self.evaluate(epoch, pool)
@@ -274,7 +346,7 @@ class DDPG(RLAlgorithm):
                               "continue...")
         self.env.terminate()
         self.policy.terminate()
-        return reward_list
+
 
     def init_opt(self):
 

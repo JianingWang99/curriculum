@@ -38,7 +38,8 @@ if __name__ == '__main__':
     info = config.INSTANCE_TYPE_INFO[ec2_instance]
     config.AWS_INSTANCE_TYPE = ec2_instance
     config.AWS_SPOT_PRICE = str(info["price"])
-    n_parallel = int(info["vCPU"] / 2)  # make the default 4 if not using ec2
+    # n_parallel = int(info["vCPU"] / 2)  # make the default 4 if not using ec2
+
     if args.ec2:
         mode = 'ec2'
     elif args.local_docker:
@@ -48,13 +49,13 @@ if __name__ == '__main__':
         mode = 'local'
         n_parallel = cpu_count() if not args.debug else 1
         # n_parallel = multiprocessing.cpu_count()
-
+    n_parallel = 1
     exp_prefix = 'new2-ddpg-maze-ant'
 
     vg = VariantGenerator()
     vg.add('goal_size', [2])  # this is the ultimate goal we care about: getting the pendulum upright
     vg.add('terminal_eps', [1])
-    vg.add('only_feasible', [True])
+    vg.add('only_feasible', [False])
     vg.add('maze_id', [0])
     vg.add('goal_range',
            lambda maze_id: [5] if maze_id == 0 else [7])  # this will be used also as bound of the state_space
@@ -63,7 +64,7 @@ if __name__ == '__main__':
     vg.add('min_reward', [0])
     vg.add('max_reward', [1])
     vg.add('distance_metric', ['L2'])
-    vg.add('extend_dist_rew', [False])  # !!!!
+    vg.add('extend_dist_rew', [True])  # !!!!
     vg.add('persistence', [1])
     vg.add('n_traj', [3])  # only for labeling and plotting (for now, later it will have to be equal to persistence!)
     vg.add('with_replacement', [False])
@@ -72,10 +73,10 @@ if __name__ == '__main__':
     vg.add('final_goal', [(0, 4)])
 
     # sampling params
-    vg.add('horizon', lambda maze_id: [250]) #original: 500
-    vg.add('outer_iters', lambda maze_id: [500])
-    vg.add('inner_iters', [500]) #change for ddpg original:5
-    vg.add('pg_batch_size', [100000]) #change for ddpg original:100000
+    vg.add('horizon', lambda maze_id: [500]) 
+    # vg.add('outer_iters', lambda maze_id: [500])
+    vg.add('inner_iters', [200]) 
+    vg.add('pg_batch_size', [64]) #32, 64, 128
     # policy initialization
     vg.add('output_gain', [1])
     vg.add('policy_init_std', [1])
@@ -167,6 +168,6 @@ if __name__ == '__main__':
                 snapshot_mode="last",
                 seed=vv['seed'],
                 exp_prefix=exp_prefix,
-                plot = True,
+                plot = False,
                 # exp_name=exp_name,
             )

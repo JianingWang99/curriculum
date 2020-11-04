@@ -70,7 +70,7 @@ class MazeEnv(ProxyEnv, Serializable):
         self.MAZE_STRUCTURE = structure = construct_maze(maze_id=self._maze_id, length=self.length)
         self.MAZE_STRUCTURE = structure = [
         [1, 1, 1, 1, 1],
-        [1, 'r', 0,'g', 1],
+        [1, 'r', 0, 'g', 1],
         [1, 1, 1, 0, 1],
         [1, 0, 0, 0, 1],
         [1, 1, 1, 1, 1],
@@ -188,8 +188,6 @@ class MazeEnv(ProxyEnv, Serializable):
         for i in range(len(structure)):
             for j in range(len(structure[0])):
                 if structure[i][j] == 'r':
-                    print("find robot(i, j): ", i, j)
-                    print("size scaling: ", size_scaling)
                     return j * size_scaling, i * size_scaling
         assert False
 
@@ -199,7 +197,6 @@ class MazeEnv(ProxyEnv, Serializable):
         for i in range(len(structure)):
             for j in range(len(structure[0])):
                 if structure[i][j] == 'g':
-                    print("find goal range(i, j): ", i, j)
                     minx = j * size_scaling - size_scaling * 0.5 - self._init_torso_x
                     maxx = j * size_scaling + size_scaling * 0.5 - self._init_torso_x
                     miny = i * size_scaling - size_scaling * 0.5 - self._init_torso_y
@@ -221,20 +218,6 @@ class MazeEnv(ProxyEnv, Serializable):
                         return True
         return False
 
-    def get_rew(self, pos):
-        x, y = pos
-        structure = self.MAZE_STRUCTURE
-        size_scaling = self.MAZE_SIZE_SCALING
-        for i in range(len(structure)):
-            for j in range(len(structure[0])):
-                if structure[i][j] == 'g':
-                    minx = j * size_scaling - size_scaling * 0.5 - self._init_torso_x
-                    maxx = j * size_scaling + size_scaling * 0.5 - self._init_torso_x
-                    miny = i * size_scaling - size_scaling * 0.5 - self._init_torso_y
-                    maxy = i * size_scaling + size_scaling * 0.5 - self._init_torso_y
-                    if minx <= x <= maxx and miny <= y <= maxy:
-                        return 1
-        return 0
 
     def find_empty_space(self):
         structure = self.MAZE_STRUCTURE
@@ -272,9 +255,8 @@ class MazeEnv(ProxyEnv, Serializable):
         next_obs = self.get_current_obs()
 
         r_posit = lambda new_obs: new_obs[-3:-1]
-        reward = self.get_rew(r_posit(next_obs))
-
-            # reward =self.coef_inner_rew * inner_rew
+        
+        reward =self.coef_inner_rew * inner_rew
 
         info['inner_rew'] = inner_rew
 

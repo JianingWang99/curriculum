@@ -20,7 +20,7 @@ from curriculum.logging.visualization import plot_labeled_states
 os.environ['THEANO_FLAGS'] = 'floatX=float32,device=cpu'
 os.environ['CUDA_VISIBLE_DEVICES'] = ''
 
-from curriculum.experiments.ddpg.ddpg import DDPG
+from curriculum.experiments.ddpg.her import HER
 from rllab.envs.normalized_env import normalize
 from rllab.policies.deterministic_mlp_policy import DeterministicMLPPolicy
 from rllab.exploration_strategies.ou_strategy import OUStrategy
@@ -53,19 +53,20 @@ def run_task(v):
     # report.add_text(format_dict(v))
 
     inner_env = normalize(AntMazeEnv(maze_id=v['maze_id']))
-    env = inner_env
 
+    fixed_goal_generator = FixedStateGenerator(v['final_goal'])
     # uniform_goal_generator = UniformStateGenerator(state_size=v['goal_size'], bounds=v['goal_range'],
     #                                                center=v['goal_center'])
-    # env = GoalExplorationEnv(
-    #     env=inner_env, goal_generator=uniform_goal_generator,
-    #     lambda x: x[-3:-1],
-    #     terminal_eps=v['terminal_eps'],
-    #     distance_metric=v['distance_metric'],
-    #     extend_dist_rew=v['extend_dist_rew'],
-    #     only_feasible=v['only_feasible'],
-    #     terminate_env=True,
-    # )
+
+    env = GoalExplorationEnv(
+        env=inner_env, goal_generator=fixed_goal_generator,
+        obs2goal_transform=lambda x: x[-3:-1],
+        terminal_eps=v['terminal_eps'],
+        distance_metric=v['distance_metric'],
+        extend_dist_rew=v['extend_dist_rew'],
+        only_feasible=v['only_feasible'],
+        terminate_env=True,
+    )
 
 
     #for ddpg: exploration strategy
@@ -114,9 +115,12 @@ def run_task(v):
         #     else:
         #         env.update_goal_generator(FixedStateGenerator(v['final_goal']))
 
+
+    # env.update_goal_generator(FixedStateGenerator(v['final_goal']))
+
     logger.log("Training the algorithm")
     
-    algo = DDPG(
+    algo = HER(
         env=env,
         es = es,
         qf = qf,   
@@ -124,14 +128,11 @@ def run_task(v):
         batch_size=v['pg_batch_size'],
         max_path_length=v['horizon'],
         n_epochs=v['inner_iters'],
-        plot = True,
+        n_updates_per_sample=40,
+        plot = False,
     )
 
-    reward_list = algo.train()
-    print("reward_list: ", reward_list)
-    with open('reward_list.csv', 'w') as myfile:
-        wr = csv.writer(myfile, quoting=csv.QUOTE_ALL)
-        wr.writerow(reward_list)
+    algo.train()
 
         # logger.log('Generating the Heatmap...')
         # test_and_plot_policy(policy, env, max_reward=v['max_reward'], sampling_res=sampling_res, n_traj=v['n_traj'],

@@ -76,7 +76,8 @@ def run_task(v):
         init_std=v['policy_init_std'],
     )
 
-    baseline = LinearFeatureBaseline(env_spec=env.spec)
+    # reduce the variance of the polivy gradient.
+    baseline = LinearFeatureBaseline(env_spec=env.spec) 
 
     # initialize all logging arrays on itr0
     outer_iter = 0

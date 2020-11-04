@@ -145,6 +145,7 @@ class GoalExplorationEnv(GoalEnv, ProxyEnv, Serializable):
 
     def step(self, action):
         observation, reward, done, info = ProxyEnv.step(self, action)
+        # print("goal env observation before append goal: ", self.transform_to_goal_space(observation))
         info['reward_inner'] = reward_inner = self.inner_weight * reward
         # print(reward_inner)
         if 'distance' not in info:
@@ -158,14 +159,14 @@ class GoalExplorationEnv(GoalEnv, ProxyEnv, Serializable):
             info['reward_dist'] = reward_dist = - self.extend_dist_rew_weight * dist
 
         info['goal'] = self.current_goal
-        # print(reward_dist)
-        # print(reward_inner)
+
         # print("step: obs={}, goal={}, dist={}".format(self.append_goal_observation(observation), self.current_goal, dist))
         if self.terminate_env and info['goal_reached']:
             done = True
         if self.append_goal_to_observation:
             # print("appending goal to obs")
             observation = self.append_goal_observation(observation)
+
         return (
             observation,
             reward_dist + reward_inner + info['goal_reached'] * self.goal_weight,
@@ -187,6 +188,8 @@ class GoalExplorationEnv(GoalEnv, ProxyEnv, Serializable):
     def dist_to_goal(self, obs):
         """ Compute the distance of the given observation to the current goal. """
         goal_obs = self.transform_to_goal_space(obs)
+        # print("goal env goal_obs: ", goal_obs)
+        # print("goal env self.current_goal: ", self.current_goal)
         if self.distance_metric == 'L1':
             goal_distance = np.linalg.norm(goal_obs - self.current_goal, ord=1)
         elif self.distance_metric == 'L2':
@@ -228,6 +231,7 @@ class GoalExplorationEnv(GoalEnv, ProxyEnv, Serializable):
             return np.concatenate(
                 [obs, np.array(self.transform_to_goal_space(obs)), np.array(self.current_goal)]
             )
+        
         return np.concatenate([obs, np.array(self.current_goal)])
 
     @property
