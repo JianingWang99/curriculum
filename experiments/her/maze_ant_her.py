@@ -75,8 +75,8 @@ if __name__ == '__main__':
     # sampling params
     vg.add('horizon', lambda maze_id: [500]) 
     # vg.add('outer_iters', lambda maze_id: [500])
-    vg.add('epoch_num', [200]) 
-    vg.add('episode_num',[10])
+    vg.add('epoch_num', [500]) 
+    vg.add('episode_num',[5])
     vg.add('pg_batch_size', [128]) #32, 64, 128
     # policy initialization
     vg.add('output_gain', [1])
