@@ -12,7 +12,7 @@ from rllab.misc.instrument import run_experiment_lite
 from rllab.misc.instrument import VariantGenerator
 from rllab import config
 
-from curriculum.experiments.ddpg.maze_ant_ddpg_algo import run_task
+from curriculum.experiments.her.maze_ant_her_algo import run_task
 
 if __name__ == '__main__':
 
@@ -50,7 +50,7 @@ if __name__ == '__main__':
         n_parallel = cpu_count() if not args.debug else 1
         # n_parallel = multiprocessing.cpu_count()
     n_parallel = 1
-    exp_prefix = 'new2-ddpg-maze-ant'
+    exp_prefix = 'new2-her-maze-ant'
 
     vg = VariantGenerator()
     vg.add('goal_size', [2])  # this is the ultimate goal we care about: getting the pendulum upright

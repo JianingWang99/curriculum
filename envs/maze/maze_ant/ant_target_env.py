@@ -16,16 +16,18 @@ class AntEnv(MujocoEnv, Serializable):
         Serializable.__init__(self, *args, **kwargs)
 
     def get_current_obs(self):
-        pos = self.model.data.qpos.flat[:-2]
-        vel = self.model.data.qvel.flat[:-2]
+        pos = self.model.data.qpos.flat[:-2]  #positions: 3D position (x,y,z) and orientation (quaternion x,y,z,w) and 8 joint angles. Total 15
+        vel = self.model.data.qvel.flat[:-2]  #velocities: 3D velocity (x,y,z) and 3D angular velocity (x,y,z) and 8 joint velocities. Total 14
         current_goal = self.model.data.qpos.flat[-2:].reshape(-1)
         
         non_goal_obs = np.concatenate([
             pos, vel,
-            np.clip(self.model.data.cfrc_ext, -1, 1).flat,
-            self.get_body_xmat("torso").flat,
-            self.get_body_com("torso"),
+            np.clip(self.model.data.cfrc_ext, -1, 1).flat,   # cfrc_ext: external forces. Total 90
+            self.get_body_xmat("torso").flat, # Total 9
+            self.get_body_com("torso"), #Total 3 body (x, y, z)
         ]).reshape(-1)
+        
+
         if self.append_goal:
             return np.concatenate([non_goal_obs, current_goal])
         else:

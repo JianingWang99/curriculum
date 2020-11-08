@@ -20,7 +20,7 @@ from curriculum.logging.visualization import plot_labeled_states
 os.environ['THEANO_FLAGS'] = 'floatX=float32,device=cpu'
 os.environ['CUDA_VISIBLE_DEVICES'] = ''
 
-from curriculum.experiments.ddpg.ddpg import DDPG
+from curriculum.experiments.her.her_goid import HERGOID
 from rllab.envs.normalized_env import normalize
 from rllab.policies.deterministic_mlp_policy import DeterministicMLPPolicy
 from rllab.exploration_strategies.ou_strategy import OUStrategy
@@ -51,6 +51,8 @@ def run_task(v):
 
     # report.add_header("{}".format(EXPERIMENT_TYPE))
     # report.add_text(format_dict(v))
+
+    # tf_session = tf.Session()
 
     inner_env = normalize(AntMazeEnv(maze_id=v['maze_id']))
 
@@ -85,7 +87,27 @@ def run_task(v):
         #init_std=v['policy_init_std'],
     )
 
-    
+    # GAN
+    # logger.log("Instantiating the GAN...")
+    # gan_configs = {key[4:]: value for key, value in v.items() if 'GAN_' in key}
+    # for key, value in gan_configs.items():
+    #     if value is tf.train.AdamOptimizer:
+    #         gan_configs[key] = tf.train.AdamOptimizer(gan_configs[key + '_stepSize'])
+    #     if value is tflearn.initializations.truncated_normal:
+    #         gan_configs[key] = tflearn.initializations.truncated_normal(stddev=gan_configs[key + '_stddev'])
+
+    # gan = StateGAN(
+    #     state_size=v['goal_size'],
+    #     evaluater_size=v['num_labels'],
+    #     state_range=v['goal_range'],
+    #     state_center=v['goal_center'],
+    #     state_noise_level=v['goal_noise_level'],
+    #     generator_layers=v['gan_generator_layers'],
+    #     discriminator_layers=v['gan_discriminator_layers'],
+    #     noise_size=v['gan_noise_size'],
+    #     tf_session=tf_session,
+    #     configs=gan_configs,
+    # )
 
     # baseline = LinearFeatureBaseline(env_spec=env.spec)
 
@@ -119,8 +141,8 @@ def run_task(v):
     # env.update_goal_generator(FixedStateGenerator(v['final_goal']))
 
     logger.log("Training the algorithm")
-    #!!!change for ddpg no time_steps, n_episodes and ..
-    algo = DDPG(
+    
+    algo = HERGOID(
         env=env,
         es = es,
         qf = qf,   

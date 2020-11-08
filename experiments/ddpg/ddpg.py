@@ -218,7 +218,7 @@ class DDPG(RLAlgorithm):
             logger.log("Training started")
             sum_reward = 0
             for epoch_itr in pyprind.prog_bar(range(self.epoch_length)):
-                self.env.render()
+                # self.env.render()
                 # Execute policy
                 if terminal:  # or path_length > self.max_path_length:
                     # Note that if the last time step ends an episode, the very
@@ -232,7 +232,9 @@ class DDPG(RLAlgorithm):
                     path_return = 0
                 action = self.es.get_action(itr, observation, policy=sample_policy)  # qf=qf)
 
-                next_observation, reward, terminal, _ = self.env.step(action)
+                next_observation, reward, terminal, info = self.env.step(action)
+                reward = info['goal_reached'] # if reach the goal then reward is 1 else 0.
+                
                 sum_reward = sum_reward + reward
                 
                 path_length += 1

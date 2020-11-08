@@ -44,16 +44,18 @@ class SimpleReplayPool(object):
         self._rewards = np.zeros(max_pool_size)
         self._terminals = np.zeros(max_pool_size, dtype='uint8')
         self._epochs = np.zeros(max_pool_size)
+        self._episodes = np.zeros(max_pool_size)
         self._bottom = 0
         self._top = 0
         self._size = 0
 
-    def add_sample(self, observation, action, reward, terminal, epoch):
+    def add_sample(self, observation, action, reward, terminal, epoch, episode):
         self._observations[self._top] = observation
         self._actions[self._top] = action
         self._rewards[self._top] = reward
         self._terminals[self._top] = terminal
         self._epochs[self._top] = epoch
+        self._episodes[self._top] = episode
         self._top = (self._top + 1) % self._max_pool_size
         if self._size >= self._max_pool_size:
             self._bottom = (self._bottom + 1) % self._max_pool_size
@@ -86,13 +88,13 @@ class SimpleReplayPool(object):
             next_observations=self._observations[transition_indices]
         )
 
-    def replay_her(self, epoch, time_steps):
-        if epoch == 0:
+    def replay_her(self, epoch, episode, time_steps):
+        if epoch == 0 and episode == 0:
             indices = np.array([x for x in range(time_steps)])
         else:
             indices = np.zeros(time_steps, dtype='uint64')
-            indices, = np.where(self._epochs == epoch)
-        
+            indices, = np.where(np.logical_and(self._epochs == epoch, self._episodes == episode))
+            
         return dict(
             observations=self._observations[indices],
             actions=self._actions[indices],
@@ -230,8 +232,8 @@ class HER(RLAlgorithm):
             raise NotImplementedError('Unsupported environment')
 
 
-    def her_replay(self, epoch, pool):
-        replay_batch = pool.replay_her(epoch, self.time_steps)
+    def her_replay(self, epoch, episode, pool):
+        replay_batch = pool.replay_her(epoch, episode, self.time_steps-1)
         
         replay_observations = replay_batch["observations"]
         replay_actions = replay_batch["actions"]
@@ -259,7 +261,7 @@ class HER(RLAlgorithm):
                 new_observation = replay_observations[i][:-2]
                 new_reward = 1.0 * self.env.is_goal_reached(new_observation)
                 new_observation = np.concatenate([new_observation, np.array(achieved_goal)])
-                pool.add_sample(new_observation, replay_actions[i], new_reward, replay_terminals[i], epoch)
+                pool.add_sample(new_observation, replay_actions[i], new_reward, replay_terminals[i], epoch, episode)
             
 
     @overrides
@@ -319,15 +321,15 @@ class HER(RLAlgorithm):
                         terminal = True
                         # only include the terminal transition in this case if the flag was set
                         if self.include_horizon_terminal_transitions:
-                            pool.add_sample(observation, action, reward * self.scale_reward, terminal, epoch)
+                            pool.add_sample(observation, action, reward * self.scale_reward, terminal, epoch, episode)
                     else:
-                        pool.add_sample(observation, action, reward * self.scale_reward, terminal, epoch)
+                        pool.add_sample(observation, action, reward * self.scale_reward, terminal, epoch, episode)
 
                     observation = next_observation
                     
                     #Hindsight Experience Replay
                     if t_step == self.time_steps - 1:
-                        self.her_replay(epoch, pool)
+                        self.her_replay(epoch, episode, pool)
                         #change the goal back to desired goal
                         self.env.update_goal(goal=final_goal) 
 

@@ -12,7 +12,8 @@ from rllab.misc.instrument import run_experiment_lite
 from rllab.misc.instrument import VariantGenerator
 from rllab import config
 
-from curriculum.experiments.ddpg.maze_ant_ddpg_algo import run_task
+from curriculum.experiments.her.maze_ant_her_goid_algo import run_task
+
 
 if __name__ == '__main__':
 
@@ -50,7 +51,7 @@ if __name__ == '__main__':
         n_parallel = cpu_count() if not args.debug else 1
         # n_parallel = multiprocessing.cpu_count()
     n_parallel = 1
-    exp_prefix = 'new2-ddpg-maze-ant'
+    exp_prefix = 'new2-her-goid-maze-ant'
 
     vg = VariantGenerator()
     vg.add('goal_size', [2])  # this is the ultimate goal we care about: getting the pendulum upright
@@ -75,8 +76,8 @@ if __name__ == '__main__':
     # sampling params
     vg.add('horizon', lambda maze_id: [500]) 
     # vg.add('outer_iters', lambda maze_id: [500])
-    vg.add('epoch_num', [200]) 
-    vg.add('episode_num',[10])
+    vg.add('epoch_num', [500]) 
+    vg.add('episode_num',[16])
     vg.add('pg_batch_size', [128]) #32, 64, 128
     # policy initialization
     vg.add('output_gain', [1])

@@ -4,6 +4,7 @@ import csv
 import click
 import numpy as np
 import json
+import random
 
 from rllab.algos.base import RLAlgorithm
 from rllab.misc.overrides import overrides
@@ -19,6 +20,9 @@ import numpy as np
 import pyprind
 import lasagne
 
+
+from curriculum.experiments.her.her_evaluator import label_states, convert_label
+from curriculum.envs.maze.maze_evaluate import sample_unif_feas
 
 def parse_update_method(update_method, **kwargs):
     if update_method == 'adam':
@@ -44,16 +48,18 @@ class SimpleReplayPool(object):
         self._rewards = np.zeros(max_pool_size)
         self._terminals = np.zeros(max_pool_size, dtype='uint8')
         self._epochs = np.zeros(max_pool_size)
+        self._episodes = np.zeros(max_pool_size)
         self._bottom = 0
         self._top = 0
         self._size = 0
 
-    def add_sample(self, observation, action, reward, terminal, epoch):
+    def add_sample(self, observation, action, reward, terminal, epoch, episode):
         self._observations[self._top] = observation
         self._actions[self._top] = action
         self._rewards[self._top] = reward
         self._terminals[self._top] = terminal
         self._epochs[self._top] = epoch
+        self._episodes[self._top] = episode
         self._top = (self._top + 1) % self._max_pool_size
         if self._size >= self._max_pool_size:
             self._bottom = (self._bottom + 1) % self._max_pool_size
@@ -86,13 +92,13 @@ class SimpleReplayPool(object):
             next_observations=self._observations[transition_indices]
         )
 
-    def replay_her(self, epoch, time_steps):
-        if epoch == 0:
+    def replay_her(self, epoch, episode, time_steps):
+        if epoch == 0 and episode == 0:
             indices = np.array([x for x in range(time_steps)])
         else:
             indices = np.zeros(time_steps, dtype='uint64')
-            indices, = np.where(self._epochs == epoch)
-        
+            indices, = np.where(np.logical_and(self._epochs == epoch, self._episodes == episode))
+            
         return dict(
             observations=self._observations[indices],
             actions=self._actions[indices],
@@ -104,7 +110,7 @@ class SimpleReplayPool(object):
         return self._size
 
 
-class HER(RLAlgorithm):
+class HERGOID(RLAlgorithm):
     """
     Hindsight Experience Replay on Deep Deterministic Policy Gradient.
     """
@@ -230,36 +236,49 @@ class HER(RLAlgorithm):
             raise NotImplementedError('Unsupported environment')
 
 
-    def her_replay(self, epoch, pool):
-        replay_batch = pool.replay_her(epoch, self.time_steps)
+    def her_replay(self, epoch, episode, pool):
+        replay_batch = pool.replay_her(epoch, episode, self.time_steps-1)
         
         replay_observations = replay_batch["observations"]
         replay_actions = replay_batch["actions"]
         replay_terminals = replay_batch["terminals"]
 
         # sample the goals for replay
-        #choose final state as goal
-        achieved_observation_index = len(replay_actions) - 1
-        achieved_observation = replay_observations[achieved_observation_index]
-        achieved_observation = achieved_observation[:-2]
-        
-        #get the agent position
-        achieved_goal = achieved_observation[-3: -1]
-        self.achieved_goal_x_list.append(achieved_goal[0])
-        self.achieved_goal_y_list.append(achieved_goal[1])
-        
-        #try1: at least distance bigger than 1.
-        if self.env.dist_to_initial(achieved_observation) >= 1:  
-            logger.log(" Achieved Goal %s" % ' '.join(map(str, achieved_goal)))         
+        new_goals = []
+        # achieved_goals = np.array([obs[-3:-1] for obs in replay_observations])
+        samples_per_cell = 10  # for the oracle rejection sampling
+        uniform_goals = sample_unif_feas(self.env, samples_per_cell=samples_per_cell) #(70, 2)
+        for i in range(int(len(uniform_goals)/2)):
+            indeces = [2*i, 2*i+1]
+            goals = uniform_goals[indeces]
+            labels = label_states(goals, self.env, self.policy, self.es, self.time_steps, n_traj=3, key='goal_reached')
+            init_classes, _ = convert_label(labels)
+            new_goal = goals[init_classes == 2] # choose the goid goal(2)  
+            print(new_goal)
+            if len(new_goal) > 0:
+                for g in new_goal:
+                    new_goals.append(g)
+            if len(new_goals) >= 4:
+                break
+            
+        print("GOID goals num: ", len(new_goals))
+        if len(new_goals) > 0:
+            # if len(new_goals) >= 4:
+            #     new_goals = random.choices(new_goals, k=4)
+            achieved_goals = new_goals
+            logger.log(" GOID Goal %s" % ' '.join(map(str, achieved_goals[0])))         
+            self.achieved_goal_x_list.append(achieved_goals[0][0])
+            self.achieved_goal_y_list.append(achieved_goals[0][1])
             # update achieved goal to the environment
-            self.env.update_goal(goal=achieved_goal)
-            new_observation = np.zeros(replay_observations[0].shape)
-            # print("her replay begin.")
-            for i in range(len(replay_actions)):
-                new_observation = replay_observations[i][:-2]
-                new_reward = 1.0 * self.env.is_goal_reached(new_observation)
-                new_observation = np.concatenate([new_observation, np.array(achieved_goal)])
-                pool.add_sample(new_observation, replay_actions[i], new_reward, replay_terminals[i], epoch)
+            for achieved_goal in achieved_goals:
+                self.env.update_goal(goal=achieved_goal)
+                new_observation = np.zeros(replay_observations[0].shape)
+                # print("her replay begin.")
+                for i in range(len(replay_actions)):
+                    new_observation = replay_observations[i][:-2]
+                    new_reward = 1.0 * self.env.is_goal_reached(new_observation)
+                    new_observation = np.concatenate([new_observation, np.array(achieved_goal)])
+                    pool.add_sample(new_observation, replay_actions[i], new_reward, replay_terminals[i], epoch, episode)
             
 
     @overrides
@@ -319,15 +338,15 @@ class HER(RLAlgorithm):
                         terminal = True
                         # only include the terminal transition in this case if the flag was set
                         if self.include_horizon_terminal_transitions:
-                            pool.add_sample(observation, action, reward * self.scale_reward, terminal, epoch)
+                            pool.add_sample(observation, action, reward * self.scale_reward, terminal, epoch, episode)
                     else:
-                        pool.add_sample(observation, action, reward * self.scale_reward, terminal, epoch)
+                        pool.add_sample(observation, action, reward * self.scale_reward, terminal, epoch, episode)
 
                     observation = next_observation
                     
                     #Hindsight Experience Replay
                     if t_step == self.time_steps - 1:
-                        self.her_replay(epoch, pool)
+                        self.her_replay(epoch, episode, pool)
                         #change the goal back to desired goal
                         self.env.update_goal(goal=final_goal) 
 

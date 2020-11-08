@@ -145,7 +145,7 @@ class GoalExplorationEnv(GoalEnv, ProxyEnv, Serializable):
 
     def step(self, action):
         observation, reward, done, info = ProxyEnv.step(self, action)
-        # print("goal env observation before append goal: ", self.transform_to_goal_space(observation))
+        
         info['reward_inner'] = reward_inner = self.inner_weight * reward
         # print(reward_inner)
         if 'distance' not in info:
@@ -166,7 +166,7 @@ class GoalExplorationEnv(GoalEnv, ProxyEnv, Serializable):
         if self.append_goal_to_observation:
             # print("appending goal to obs")
             observation = self.append_goal_observation(observation)
-
+        
         return (
             observation,
             reward_dist + reward_inner + info['goal_reached'] * self.goal_weight,
@@ -196,6 +196,20 @@ class GoalExplorationEnv(GoalEnv, ProxyEnv, Serializable):
             goal_distance = np.linalg.norm(goal_obs - self.current_goal, ord=2)
         elif callable(self.distance_metric):
             goal_distance = self.distance_metric(goal_obs, self.current_goal)
+        else:
+            raise NotImplementedError('Unsupported distance metric type.')
+        return goal_distance
+
+    def dist_to_initial(self, obs):
+        """ Compute the distance of the given observation to the agent initial distance. """
+        goal_obs = self.transform_to_goal_space(obs)
+        initial_pos = np.array([0,0])
+        if self.distance_metric == 'L1':
+            goal_distance = np.linalg.norm(goal_obs - initial_pos, ord=1)
+        elif self.distance_metric == 'L2':
+            goal_distance = np.linalg.norm(goal_obs - initial_pos, ord=2)
+        elif callable(self.distance_metric):
+            goal_distance = self.distance_metric(goal_obs, initial_pos)
         else:
             raise NotImplementedError('Unsupported distance metric type.')
         return goal_distance

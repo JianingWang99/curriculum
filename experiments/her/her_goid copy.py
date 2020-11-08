@@ -19,6 +19,8 @@ import numpy as np
 import pyprind
 import lasagne
 
+from curriculum.state.evaluator import convert_label, label_states
+
 
 def parse_update_method(update_method, **kwargs):
     if update_method == 'adam':
@@ -104,7 +106,7 @@ class SimpleReplayPool(object):
         return self._size
 
 
-class HER(RLAlgorithm):
+class HERGOID(RLAlgorithm):
     """
     Hindsight Experience Replay on Deep Deterministic Policy Gradient.
     """
@@ -231,35 +233,37 @@ class HER(RLAlgorithm):
 
 
     def her_replay(self, epoch, pool):
-        replay_batch = pool.replay_her(epoch, self.time_steps)
-        
+        replay_batch = pool.replay_her(epoch, self.time_steps)    
         replay_observations = replay_batch["observations"]
         replay_actions = replay_batch["actions"]
         replay_terminals = replay_batch["terminals"]
 
-        # sample the goals for replay
-        #choose final state as goal
-        achieved_observation_index = len(replay_actions) - 1
-        achieved_observation = replay_observations[achieved_observation_index]
-        achieved_observation = achieved_observation[:-2]
+        # unif_goals = sample_unif_feas(env, samples_per_cell=samples_per_cell) #(70, 2)
+        achieved_goals = np.array([obs[-3:-1] for obs in replay_observations])
+        print("her_replay achieved_goals length", len(achieved_goals))
+        print("her_replay achieved_goals", achieved_goals)
+
+        # labels = label_states(achieved_goals, self.env, self.policy, self.time_steps, n_traj=3, key='goal_reached')
+
+
+
+        # logger.log("Converting the labels")
+        # init_classes, text_labels = convert_label(labels)
+        # new_goals = achieved_goals[init_classes == 2] # choose the goid goal(2)
         
-        #get the agent position
-        achieved_goal = achieved_observation[-3: -1]
-        self.achieved_goal_x_list.append(achieved_goal[0])
-        self.achieved_goal_y_list.append(achieved_goal[1])
-        
-        #try1: at least distance bigger than 1.
-        if self.env.dist_to_initial(achieved_observation) >= 1:  
-            logger.log(" Achieved Goal %s" % ' '.join(map(str, achieved_goal)))         
-            # update achieved goal to the environment
-            self.env.update_goal(goal=achieved_goal)
-            new_observation = np.zeros(replay_observations[0].shape)
-            # print("her replay begin.")
-            for i in range(len(replay_actions)):
-                new_observation = replay_observations[i][:-2]
-                new_reward = 1.0 * self.env.is_goal_reached(new_observation)
-                new_observation = np.concatenate([new_observation, np.array(achieved_goal)])
-                pool.add_sample(new_observation, replay_actions[i], new_reward, replay_terminals[i], epoch)
+        # print("her_replay new_goals: ", new_goals)
+
+
+        # logger.log(" New Goal %s" % ' '.join(map(str, new_goals)))         
+        # # update gan generate new goal to the environment
+        # self.env.update_goal(goal=new_goals)
+        # new_observation = np.zeros(replay_observations[0].shape)
+        # # print("her replay begin.")
+        # for i in range(len(replay_actions)):
+        #     new_observation = replay_observations[i][:-2]
+        #     new_reward = 1.0 * self.env.is_goal_reached(new_goals)
+        #     new_observation = np.concatenate([new_observation, np.array(new_goals)])
+        #     pool.add_sample(new_observation, replay_actions[i], new_reward, replay_terminals[i], epoch)
             
 
     @overrides

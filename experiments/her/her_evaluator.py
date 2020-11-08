@@ -6,7 +6,9 @@ from collections import OrderedDict
 import cloudpickle
 import time
 
-from rllab.sampler.utils import rollout
+from rllab.misc import tensor_utils
+
+# from rllab.sampler.utils import rollout
 from rllab.misc import logger
 
 from curriculum.envs.base import FixedStateGenerator
@@ -160,24 +162,24 @@ def label_states_from_paths(all_paths, min_reward=0, max_reward=1, key='rewards'
     return [states, labels]
 
 
-def label_states(states, env, policy, horizon, as_goals=True, min_reward=0.1, max_reward=0.9, key='rewards',
+def label_states(states, env, policy, es, horizon, as_goals=True, min_reward=0.1, max_reward=0.9, key='rewards',
                  old_rewards=None, improvement_threshold=0.1, n_traj=1, n_processes=-1, full_path=False, return_rew=False):
-    logger.log("Labelling starts")
+    # logger.log("Labelling starts")
     result = evaluate_states(
-        states, env, policy, horizon, as_goals=as_goals,
+        states, env, policy, es, horizon, as_goals=as_goals,
         n_traj=n_traj, n_processes=n_processes, key=key, full_path=full_path
     )
     if full_path:
         mean_rewards, paths = result
     else:
         mean_rewards = result
-    logger.log("Evaluated states.")
+    # logger.log("Evaluated states.")
 
     mean_rewards = mean_rewards.reshape(-1, 1)
     # print("evaluator mean rewards: ", mean_rewards)
     labels = compute_labels(mean_rewards, old_rewards=old_rewards, min_reward=min_reward, max_reward=max_reward,
                           improvement_threshold=improvement_threshold)
-    logger.log("Starts labelled")
+    # logger.log("Starts labelled")
 
     if full_path:
         return labels, paths
@@ -187,7 +189,7 @@ def label_states(states, env, policy, horizon, as_goals=True, min_reward=0.1, ma
 
 
 def compute_labels(mean_rewards, old_rewards=None, min_reward=0.1, max_reward=0.9, improvement_threshold=0.1):
-    logger.log("Computing state labels")
+    # logger.log("Computing state labels")
     if old_rewards is not None:
         old_rewards = old_rewards.reshape(-1, 1)
         labels = np.hstack(
@@ -240,13 +242,14 @@ def convert_label(labels):
     return new_labels, classes
 
 
-def evaluate_states(states, env, policy, horizon, n_traj=1, n_processes=-1, full_path=False, key='rewards',
+def evaluate_states(states, env, policy, es, horizon, n_traj=1, n_processes=-1, full_path=False, key='rewards',
                     as_goals=True,
                     aggregator=(np.sum, np.mean)):
     evaluate_state_wrapper = FunctionWrapper(
         evaluate_state,
         env=env,
         policy=policy,
+        es=es,
         horizon=horizon,
         n_traj=n_traj,
         full_path=full_path,
@@ -265,7 +268,7 @@ def evaluate_states(states, env, policy, horizon, n_traj=1, n_processes=-1, full
     return np.array(result)
 
 
-def evaluate_state(state, env, policy, horizon, n_traj=1, full_path=False, key='rewards', as_goals=True,
+def evaluate_state(state, env, policy, es, horizon, n_traj=1, full_path=False, key='rewards', as_goals=True,
                    aggregator=(np.sum, np.mean)):
     aggregated_data = []
     paths = []
@@ -275,7 +278,7 @@ def evaluate_state(state, env, policy, horizon, n_traj=1, full_path=False, key='
         env.update_start_generator(FixedStateGenerator(state))
 
     for j in range(n_traj):
-        paths.append(rollout(env, policy, horizon))
+        paths.append(rollout(env, policy, es, horizon))
         if key in paths[-1]:
             aggregated_data.append(
                 aggregator[0](paths[-1][key])
@@ -291,6 +294,56 @@ def evaluate_state(state, env, policy, horizon, n_traj=1, full_path=False, key='
         return mean_reward, paths
 
     return mean_reward
+
+def rollout(env, policy, es, max_path_length=np.inf, animated=False, speedup=1, init_state=None, no_action = False):
+    observations = []
+    actions = []
+    rewards = []
+    # agent_infos = []
+    env_infos = []
+    dones = []
+    # no_action = True
+    if init_state is not None:
+        o = env.reset(init_state)
+    else:
+        o = env.reset()
+    es.reset()
+    policy.reset()
+    path_length = 0
+    if animated:
+        env.render()
+    while path_length < max_path_length:
+        a = es.get_action(1 , o, policy=policy)
+
+        if no_action:
+            a = np.zeros_like(a)
+        next_o, r, d, env_info = env.step(a)
+        observations.append(env.observation_space.flatten(o))
+        rewards.append(r)
+        actions.append(env.action_space.flatten(a))
+        # agent_infos.append(agent_info)
+        env_infos.append(env_info)
+        dones.append(d)
+        path_length += 1
+        if d:
+            break
+        o = next_o
+        if animated:
+            env.render()
+            timestep = 0.05
+            time.sleep(timestep / speedup)
+    if animated:
+        env.render(close=False)
+
+    return dict(
+        observations=tensor_utils.stack_tensor_list(observations),
+        actions=tensor_utils.stack_tensor_list(actions),
+        rewards=tensor_utils.stack_tensor_list(rewards),
+        # agent_infos=tensor_utils.stack_tensor_dict_list(agent_infos),
+        env_infos=tensor_utils.stack_tensor_dict_list(env_infos),
+        dones=np.asarray(dones),
+        last_obs=o,
+    )
 
 
 def evaluate_state_env(env, policy, horizon, n_states=10, n_traj=1, n_processes=-1, **kwargs):
