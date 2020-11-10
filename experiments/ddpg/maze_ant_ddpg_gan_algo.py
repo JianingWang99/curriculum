@@ -18,7 +18,7 @@ from curriculum.logging.visualization import plot_labeled_states
 os.environ['THEANO_FLAGS'] = 'floatX=float32,device=cpu'
 os.environ['CUDA_VISIBLE_DEVICES'] = ''
 
-from rllab.algos.ddpg import DDPG
+from curriculum.experiments.ddpg.algo_ddpg import DDPG
 from rllab.baselines.linear_feature_baseline import LinearFeatureBaseline
 from rllab.envs.normalized_env import normalize
 # from rllab.policies.gaussian_mlp_policy import GaussianMLPPolicy
@@ -26,13 +26,13 @@ from rllab.policies.deterministic_mlp_policy import DeterministicMLPPolicy
 from rllab.exploration_strategies.ou_strategy import OUStrategy
 from rllab.q_functions.continuous_mlp_q_function import ContinuousMLPQFunction
 
-from curriculum.state.evaluator import label_states, label_states_from_paths
+from curriculum.experiments.her.her_evaluator import label_states, label_states_from_paths
 from curriculum.envs.base import UniformListStateGenerator, UniformStateGenerator
 from curriculum.state.generator import StateGAN
 from curriculum.state.utils import StateCollection
 
-from curriculum.envs.goal_env import GoalExplorationEnv, generate_initial_goals
-from curriculum.envs.maze.maze_evaluate import test_and_plot_policy  # TODO: make this external to maze env
+from curriculum.envs.goal_env import GoalExplorationEnv, ddpg_generate_initial_goals
+from curriculum.experiments.ddpg.ddpg_maze_evaluate import test_and_plot_policy  # TODO: make this external to maze env
 from curriculum.envs.maze.maze_ant.ant_maze_env import AntMazeEnv  # we need to use our maze with is_feas
 
 
@@ -85,14 +85,30 @@ def run_task(v):
     #critic network
     qf = ContinuousMLPQFunction(env_spec=env.spec)
 
+    algo = DDPG(
+                env=env,
+                es = es,
+                qf = qf,
+                #poutsa = triantafilo,
+                policy=policy,
+                #baseline=baseline,
+                batch_size=v['ddpg_batch_size'],
+                max_path_length=v['horizon'],
+                n_epochs=v['inner_iters'],
+                min_pool_size=v['ddpg_min_pool_size'],
+                replay_pool_size=v['ddpg_replay_pool_size'],
+                #step_size=0.01, #for optimizer, ddpg uses adam update method, so it's not needed
+                plot=False,
+            )
 
-    baseline = LinearFeatureBaseline(env_spec=env.spec)
+
+    # baseline = LinearFeatureBaseline(env_spec=env.spec)
 
     # initialize all logging arrays on itr0
     outer_iter = 0
 
     logger.log('Generating the Initial Heatmap...')
-    test_and_plot_policy(policy, env, max_reward=v['max_reward'], sampling_res=sampling_res, n_traj=v['n_traj'],
+    test_and_plot_policy(policy, es, env, max_reward=v['max_reward'], sampling_res=sampling_res, n_traj=v['n_traj'],
                          itr=outer_iter, report=report, limit=v['goal_range'], center=v['goal_center'])
 
     # GAN
@@ -118,7 +134,7 @@ def run_task(v):
     )
     logger.log("pretraining the GAN...")
     if v['smart_init']:
-        feasible_goals = generate_initial_goals(env, policy, v['goal_range'], goal_center=v['goal_center'],
+        feasible_goals = ddpg_generate_initial_goals(env, policy, es, v['goal_range'], goal_center=v['goal_center'],
                                                 horizon=v['horizon'])
         labels = np.ones((feasible_goals.shape[0], 2)).astype(np.float32)  # make them all good goals
         plot_labeled_states(feasible_goals, labels, report=report, itr=outer_iter,
@@ -133,7 +149,7 @@ def run_task(v):
     initial_goals, _ = gan.sample_states_with_noise(v['num_new_goals'])
 
     logger.log("Labeling the goals")
-    labels = label_states(initial_goals, env, policy, v['horizon'], n_traj=v['n_traj'], key='goal_reached')
+    labels = label_states(initial_goals, env, policy, es, v['horizon'], n_traj=v['n_traj'], key='goal_reached')
 
     plot_labeled_states(initial_goals, labels, report=report, itr=outer_iter,
                         limit=v['goal_range'], center=v['goal_center'])
@@ -156,7 +172,7 @@ def run_task(v):
 
         # if needed label the goals before any update
         if v['label_with_variation']:
-            old_labels, old_rewards = label_states(goals, env, policy, v['horizon'], as_goals=True, n_traj=v['n_traj'],
+            old_labels, old_rewards = label_states(goals, env, policy, es, v['horizon'], as_goals=True, n_traj=v['n_traj'],
                                                    key='goal_reached', full_path=False, return_rew=True)
 
         # itr_label = outer_iter  # use outer_iter to log everything or "last" to log only the last
@@ -170,40 +186,23 @@ def run_task(v):
             )
 
             logger.log("Training the algorithm")
-            algo = DDPG(
-                env=env,
-                es = es,
-                qf = qf,
-                #poutsa = triantafilo,
-                policy=policy,
-                #baseline=baseline,
-                batch_size=v['pg_batch_size'],
-                max_path_length=v['horizon'],
-                n_epochs=v['inner_iters'],
-                #step_size=0.01, #for optimizer, ddpg uses adam update method, so it's not needed
-                plot=False,
-            )
+            algo.env = env
+            algo.policy = policy
+            policy = algo.train()
 
-            trpo_paths = algo.train()
-
-        if v['use_trpo_paths']:
-            logger.log("labeling starts with trpo rollouts")
-            [goals, labels] = label_states_from_paths(trpo_paths, n_traj=2, key='goal_reached',  # using the min n_traj
-                                                       as_goal=True, env=env)
-            paths = [path for paths in trpo_paths for path in paths]
-        elif v['label_with_variation']:
-            labels, paths = label_states(goals, env, policy, v['horizon'], as_goals=True, n_traj=v['n_traj'],
+        if v['label_with_variation']:
+            labels, paths = label_states(goals, env, policy, es, v['horizon'], as_goals=True, n_traj=v['n_traj'],
                                          key='goal_reached', old_rewards=old_rewards, full_path=True)
         else:
             logger.log("labeling starts manually")
-            labels, paths = label_states(goals, env, policy, v['horizon'], as_goals=True, n_traj=v['n_traj'],
+            labels, paths = label_states(goals, env, policy, es, v['horizon'], as_goals=True, n_traj=v['n_traj'],
                                          key='goal_reached', full_path=True)
 
         with logger.tabular_prefix("OnStarts_"):
             env.log_diagnostics(paths)
 
         logger.log('Generating the Heatmap...')
-        test_and_plot_policy(policy, env, max_reward=v['max_reward'], sampling_res=sampling_res, n_traj=v['n_traj'],
+        test_and_plot_policy(policy, es, env, max_reward=v['max_reward'], sampling_res=sampling_res, n_traj=v['n_traj'],
                              itr=outer_iter, report=report, limit=v['goal_range'], center=v['goal_center'])
 
         #logger.log("Labeling the goals")
@@ -238,7 +237,7 @@ def run_task(v):
 
         if v['add_on_policy']:
             logger.log("sampling on policy")
-            feasible_goals = generate_initial_goals(env, policy, v['goal_range'], goal_center=v['goal_center'],
+            feasible_goals = ddpg_generate_initial_goals(env, policy, es, v['goal_range'], goal_center=v['goal_center'],
                                                     horizon=v['horizon'])
             # downsampled_feasible_goals = feasible_goals[np.random.choice(feasible_goals.shape[0], v['add_on_policy']),:]
             all_goals.append(feasible_goals)

@@ -84,7 +84,7 @@ class SimpleReplayPool(object):
 
 class DDPG(RLAlgorithm):
     """
-    Modified Deep Deterministic Policy Gradient for HER.  
+    Deep Deterministic Policy Gradient
     """
 
     def __init__(
@@ -186,15 +186,8 @@ class DDPG(RLAlgorithm):
 
         self.opt_info = None
 
-    def start_worker(self):
-        parallel_sampler.populate_task(self.env, self.policy)
-        if self.plot:
-            plotter.init_plot(self.env, self.policy)
-
-    @overrides
-    def train(self):
         # This seems like a rather sequential method
-        pool = SimpleReplayPool(
+        self.pool = SimpleReplayPool(
             max_pool_size=self.replay_pool_size,
             observation_dim=self.env.observation_space.flat_dim,
             action_dim=self.env.action_space.flat_dim,
@@ -202,13 +195,20 @@ class DDPG(RLAlgorithm):
         self.start_worker()
 
         self.init_opt()
+
+    def start_worker(self):
+        parallel_sampler.populate_task(self.env, self.policy)
+        if self.plot:
+            plotter.init_plot(self.env, self.policy)
+
+    @overrides
+    def train(self):      
         itr = 0
         path_length = 0
         path_return = 0
         terminal = False
         observation = self.env.reset()
 
-        reward_list = []
         sample_policy = pickle.loads(pickle.dumps(self.policy))
 
         one_goal_mode = True
@@ -244,39 +244,38 @@ class DDPG(RLAlgorithm):
                     terminal = True
                     # only include the terminal transition in this case if the flag was set
                     if self.include_horizon_terminal_transitions:
-                        pool.add_sample(observation, action, reward * self.scale_reward, terminal)
+                        self.pool.add_sample(observation, action, reward * self.scale_reward, terminal)
                 else:
-                    pool.add_sample(observation, action, reward * self.scale_reward, terminal)
+                    self.pool.add_sample(observation, action, reward * self.scale_reward, terminal)
 
                 observation = next_observation
 
-                if pool.size >= self.min_pool_size:
+                print("ddpg pool size, ", self.pool.size)
+                if self.pool.size >= self.min_pool_size:
+                    # print("ddpg do training...")
                     for update_itr in range(self.n_updates_per_sample):
                         # Train policy
-                        batch = pool.random_batch(self.batch_size)
+                        batch = self.pool.random_batch(self.batch_size)
                         self.do_training(itr, batch)
                     sample_policy.set_param_values(self.policy.get_param_values())
 
                 itr += 1
-            
-            reward_list.append(sum_reward)
-            print("epoch: ", epoch,"ddpg reward_list", reward_list)
 
             logger.log("Training finished")
-            if pool.size >= self.min_pool_size:
-                self.evaluate(epoch, pool)
-                params = self.get_epoch_snapshot(epoch)
-                logger.save_itr_params(epoch, params)
+            # if pool.size >= self.min_pool_size:
+            #     self.evaluate(epoch, pool)
+            #     params = self.get_epoch_snapshot(epoch)
+            #     logger.save_itr_params(epoch, params)
             logger.dump_tabular(with_prefix=False)
             logger.pop_prefix()
-            if self.plot:
-                self.update_plot()
-                if self.pause_for_plot:
-                    input("Plotting evaluation run: Press Enter to "
-                              "continue...")
+            # if self.plot:
+            #     self.update_plot()
+            #     if self.pause_for_plot:
+            #         input("Plotting evaluation run: Press Enter to "
+            #                   "continue...")
         self.env.terminate()
         self.policy.terminate()
-        return reward_list
+        return self.policy
 
     def init_opt(self):
 

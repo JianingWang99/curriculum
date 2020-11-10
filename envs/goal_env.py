@@ -347,6 +347,36 @@ def generate_initial_goals(env, policy, goal_range, goal_center=None, horizon=50
             
     return np.array(goals)
 
+def ddpg_generate_initial_goals(env, policy, es, goal_range, goal_center=None, horizon=500, size=10000):
+    current_goal = get_current_goal(env)
+    goal_dim = np.array(current_goal).shape
+    done = False
+    obs = env.reset()
+    goals = [get_goal_observation(env)]
+    
+    if goal_center is None:
+        goal_center = np.zeros(goal_dim)
+    steps = 0
+    while len(goals) < size:
+        steps += 1
+        if done or steps >= horizon:
+            steps = 0
+            done = False
+            env.update_goal_generator(
+                FixedStateGenerator(
+                    goal_center + np.random.uniform(-goal_range, goal_range, goal_dim)
+                )
+            )
+            obs = env.reset()
+            es.reset()
+            goals.append(get_goal_observation(env))
+        else:
+            action = es.get_action(1, obs, policy = policy)
+            obs, _, done, _ = env.step(action)
+            goals.append(get_goal_observation(env))
+            
+    return np.array(goals)
+
 
 def generate_brownian_goals(env, starts=None, horizon=100, size=1000):
     current_goal = get_current_goal(env)
