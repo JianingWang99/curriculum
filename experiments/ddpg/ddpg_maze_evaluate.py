@@ -20,7 +20,7 @@ from curriculum.logging.visualization import save_image
 
 from rllab.exploration_strategies.ou_strategy import OUStrategy
 
-quick_test = True # change from False
+quick_test = False 
 
 filename = str(uuid.uuid4())
 
@@ -237,7 +237,6 @@ def find_empty_spaces(train_env, sampling_res=1):
     else:
         maze_env = train_env.wrapped_env.wrapped_env
     empty_spaces = maze_env.find_empty_space()
-
     size_scaling = maze_env.MAZE_SIZE_SCALING
     num_samples = 2 ** sampling_res
     spacing = size_scaling / num_samples
@@ -306,7 +305,7 @@ def test_policy_parallel(policy, es, train_env, as_goals=True, visualize=True, s
 
     # hack to adjust dim of starts in case of doing velocity also
     states = [np.pad(s, (0, gen_state_size - np.size(s)), 'constant') for s in states]
-
+    
     avg_totRewards = []
     avg_success = []
     avg_time = []
@@ -319,7 +318,7 @@ def test_policy_parallel(policy, es, train_env, as_goals=True, visualize=True, s
         state_paths = paths[path_index:path_index + n_traj]
         avg_totRewards.append(np.mean([np.sum(path['rewards']) for path in state_paths]))
         avg_success.append(np.mean([int(np.min(path['env_infos']['distance'])
-                                        <= train_env.terminal_eps) for path in state_paths]))
+                                        <= train_env.terminal_eps) for path in state_paths]))                             
         avg_time.append(np.mean([path['rewards'].shape[0] for path in state_paths]))
 
         path_index += n_traj
@@ -335,6 +334,7 @@ def test_and_plot_policy(policy, es, env, as_goals=True, visualize=True, samplin
     while not hasattr(obj, '_maze_id') and hasattr(obj, 'wrapped_env'):
         obj = obj.wrapped_env
     maze_id = obj._maze_id if hasattr(obj, '_maze_id') else None
+
     plot_heatmap(avg_success, states, spacing=spacing, show_heatmap=False, maze_id=maze_id,
                  center=center, limit=limit)
     reward_img = save_image()

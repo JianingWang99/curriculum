@@ -18,7 +18,7 @@ from curriculum.logging.visualization import plot_labeled_states
 os.environ['THEANO_FLAGS'] = 'floatX=float32,device=cpu'
 os.environ['CUDA_VISIBLE_DEVICES'] = ''
 
-from curriculum.experiments.ddpg.algo_ddpg import DDPG
+from curriculum.experiments.ddpg.algo_ddpg import DDPG, SimpleReplayPool
 from rllab.baselines.linear_feature_baseline import LinearFeatureBaseline
 from rllab.envs.normalized_env import normalize
 # from rllab.policies.gaussian_mlp_policy import GaussianMLPPolicy
@@ -39,6 +39,8 @@ from curriculum.envs.maze.maze_ant.ant_maze_env import AntMazeEnv  # we need to 
 EXPERIMENT_TYPE = osp.basename(__file__).split('.')[0]
 
 sampling_res = 2
+
+
 
 
 def run_task(v):
@@ -79,27 +81,11 @@ def run_task(v):
         #output_gain=v['output_gain'],
         #init_std=v['policy_init_std'],
     )
-
+    print("ddpg initial policy param value: ", policy.get_param_values())
     #for ddpg: exploration strategy
     es = OUStrategy(env_spec = env.spec)
     #critic network
     qf = ContinuousMLPQFunction(env_spec=env.spec)
-
-    algo = DDPG(
-                env=env,
-                es = es,
-                qf = qf,
-                #poutsa = triantafilo,
-                policy=policy,
-                #baseline=baseline,
-                batch_size=v['ddpg_batch_size'],
-                max_path_length=v['horizon'],
-                n_epochs=v['inner_iters'],
-                min_pool_size=v['ddpg_min_pool_size'],
-                replay_pool_size=v['ddpg_replay_pool_size'],
-                #step_size=0.01, #for optimizer, ddpg uses adam update method, so it's not needed
-                plot=False,
-            )
 
 
     # baseline = LinearFeatureBaseline(env_spec=env.spec)
@@ -186,11 +172,42 @@ def run_task(v):
             )
 
             logger.log("Training the algorithm")
-            algo.env = env
-            algo.policy = policy
-            policy = algo.train()
+            # This seems like a rather sequential method
+            pool = SimpleReplayPool(
+                max_pool_size=v['ddpg_replay_pool_size'],
+                observation_dim=env.observation_space.flat_dim,
+                action_dim=env.action_space.flat_dim,
+            )
+            print("ddpg policy param value before: ", policy.get_param_values())
+            print("ddpg pool size, ", pool.size)
+            algo = DDPG(
+                env=env,
+                es = es,
+                qf = qf,
+                #poutsa = triantafilo,
+                policy=policy,
+                pool=pool,
+                #baseline=baseline,
+                batch_size=v['ddpg_batch_size'],
+                max_path_length=v['horizon'],
+                n_epochs=v['inner_iters'],
+                epoch_length=v['horizon'],
+                min_pool_size=v['ddpg_min_pool_size'],
+                replay_pool_size=v['ddpg_replay_pool_size'],
+                #step_size=0.01, #for optimizer, ddpg uses adam update method, so it's not needed
+                plot=False,
+            )
+            inner_begin_iter = (outer_iter-1)*v['inner_iters']+1
+            ddpg_paths = algo.train(itr=inner_begin_iter)
+            print("ddpg policy param value after: ", policy.get_param_values())
+            print("ddpg pool size, ", pool.size)
 
-        if v['label_with_variation']:
+        if v['use_ddpg_paths']:
+            logger.log("labeling starts with ddpg rollouts")
+            [goals, labels] = label_states_from_paths(ddpg_paths, n_traj=2, key='goal_reached',  # using the min n_traj
+                                                       as_goal=True, env=env)
+            paths = [path for paths in ddpg_paths for path in paths]
+        elif v['label_with_variation']:
             labels, paths = label_states(goals, env, policy, es, v['horizon'], as_goals=True, n_traj=v['n_traj'],
                                          key='goal_reached', old_rewards=old_rewards, full_path=True)
         else:

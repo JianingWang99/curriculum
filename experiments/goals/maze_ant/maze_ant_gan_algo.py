@@ -1,5 +1,4 @@
 import matplotlib
-import time
 
 matplotlib.use('Agg')
 import os
@@ -76,15 +75,14 @@ def run_task(v):
         init_std=v['policy_init_std'],
     )
 
-    # reduce the variance of the polivy gradient.
-    baseline = LinearFeatureBaseline(env_spec=env.spec) 
+    baseline = LinearFeatureBaseline(env_spec=env.spec)
 
     # initialize all logging arrays on itr0
     outer_iter = 0
-    start_time = time.time()
+
     logger.log('Generating the Initial Heatmap...')
     test_and_plot_policy(policy, env, max_reward=v['max_reward'], sampling_res=sampling_res, n_traj=v['n_traj'],
-                         itr=outer_iter, time_spend = time.time()-start_time, report=report, limit=v['goal_range'], center=v['goal_center'])
+                         itr=outer_iter, report=report, limit=v['goal_range'], center=v['goal_center'])
 
     # GAN
     logger.log("Instantiating the GAN...")
@@ -192,7 +190,7 @@ def run_task(v):
 
         logger.log('Generating the Heatmap...')
         test_and_plot_policy(policy, env, max_reward=v['max_reward'], sampling_res=sampling_res, n_traj=v['n_traj'],
-                             itr=outer_iter, time_spend = time.time()-start_time, report=report, limit=v['goal_range'], center=v['goal_center'])
+                             itr=outer_iter, report=report, limit=v['goal_range'], center=v['goal_center'])
 
         #logger.log("Labeling the goals")
         #labels = label_states(goals, env, policy, v['horizon'], n_traj=v['n_traj'], key='goal_reached')

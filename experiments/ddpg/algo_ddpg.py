@@ -93,6 +93,7 @@ class DDPG(RLAlgorithm):
             policy,
             qf,
             es,
+            pool,
             batch_size=32,
             n_epochs=200,
             epoch_length=1000,
@@ -146,6 +147,7 @@ class DDPG(RLAlgorithm):
         self.policy = policy
         self.qf = qf
         self.es = es
+        self.pool = pool
         self.batch_size = batch_size
         self.n_epochs = n_epochs
         self.epoch_length = epoch_length
@@ -186,12 +188,7 @@ class DDPG(RLAlgorithm):
 
         self.opt_info = None
 
-        # This seems like a rather sequential method
-        self.pool = SimpleReplayPool(
-            max_pool_size=self.replay_pool_size,
-            observation_dim=self.env.observation_space.flat_dim,
-            action_dim=self.env.action_space.flat_dim,
-        )
+
         self.start_worker()
 
         self.init_opt()
@@ -202,19 +199,20 @@ class DDPG(RLAlgorithm):
             plotter.init_plot(self.env, self.policy)
 
     @overrides
-    def train(self):      
-        itr = 0
+    def train(self, itr=0):      
+        itr = itr
+        end_itr = itr + self.n_epochs
         path_length = 0
         path_return = 0
         terminal = False
         observation = self.env.reset()
 
+        # This seems like a rather sequential method
+
         sample_policy = pickle.loads(pickle.dumps(self.policy))
-
-        one_goal_mode = True
-
-        for epoch in range(self.n_epochs):
-            logger.push_prefix('epoch #%d | ' % epoch)
+        print("inner policy begin: ", sample_policy.get_param_values())
+        for epoch in range(itr, end_itr):
+            logger.push_prefix('inner_epoch #%d | ' % epoch)
             logger.log("Training started")
             sum_reward = 0
             for epoch_itr in pyprind.prog_bar(range(self.epoch_length)):
@@ -232,8 +230,9 @@ class DDPG(RLAlgorithm):
                     path_return = 0
                 action = self.es.get_action(itr, observation, policy=sample_policy)  # qf=qf)
 
-                next_observation, reward, terminal, info = self.env.step(action)
-                reward = info['goal_reached'] # if reach the goal then reward is 1 else 0.
+                next_observation, reward, terminal, info = self.env.step(action) # if reach the goal then reward is 1 else 0.
+                # print("ddpg reward and goal reach: ", reward, ' ,', info['goal_reached'], ' ,', next_observation[-3:-1])
+                
                 
                 sum_reward = sum_reward + reward
                 
@@ -250,7 +249,7 @@ class DDPG(RLAlgorithm):
 
                 observation = next_observation
 
-                print("ddpg pool size, ", self.pool.size)
+                
                 if self.pool.size >= self.min_pool_size:
                     # print("ddpg do training...")
                     for update_itr in range(self.n_updates_per_sample):
@@ -262,10 +261,10 @@ class DDPG(RLAlgorithm):
                 itr += 1
 
             logger.log("Training finished")
-            # if pool.size >= self.min_pool_size:
-            #     self.evaluate(epoch, pool)
-            #     params = self.get_epoch_snapshot(epoch)
-            #     logger.save_itr_params(epoch, params)
+            if self.pool.size >= self.min_pool_size:
+                paths = self.evaluate(epoch, self.pool)
+                params = self.get_epoch_snapshot(epoch)
+                logger.save_itr_params(epoch, params)
             logger.dump_tabular(with_prefix=False)
             logger.pop_prefix()
             # if self.plot:
@@ -273,9 +272,10 @@ class DDPG(RLAlgorithm):
             #     if self.pause_for_plot:
             #         input("Plotting evaluation run: Press Enter to "
             #                   "continue...")
+        print("inner policy after: ", self.policy.get_param_values())
         self.env.terminate()
         self.policy.terminate()
-        return self.policy
+        return paths
 
     def init_opt(self):
 
@@ -451,6 +451,7 @@ class DDPG(RLAlgorithm):
         self.q_averages = []
         self.y_averages = []
         self.es_path_returns = []
+        return paths
 
     def update_plot(self):
         if self.plot:

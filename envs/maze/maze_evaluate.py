@@ -6,8 +6,8 @@ import joblib
 
 from matplotlib import pyplot as plt
 import numpy as np
-import pylab
 from pylab import *
+import pylab
 import matplotlib.colorbar as cbar
 import matplotlib.patches as patches
 
@@ -18,7 +18,7 @@ from curriculum.envs.base import FixedStateGenerator
 from curriculum.state.evaluator import evaluate_states
 from curriculum.logging.visualization import save_image
 
-quick_test = True # change from False
+quick_test = False
 
 filename = str(uuid.uuid4())
 
@@ -325,7 +325,7 @@ def test_policy_parallel(policy, train_env, as_goals=True, visualize=True, sampl
 
 
 def test_and_plot_policy(policy, env, as_goals=True, visualize=True, sampling_res=1,
-                         n_traj=1, max_reward=1, itr=0, time_spend = 0, report=None, center=None, limit=None, bounds=None):
+                         n_traj=1, max_reward=1, itr=0, report=None, center=None, limit=None, bounds=None):
 
     avg_totRewards, avg_success, states, spacing, avg_time = test_policy(policy, env, as_goals, visualize, center=center,
                                                                sampling_res=sampling_res, n_traj=n_traj, bounds=bounds)
@@ -346,7 +346,6 @@ def test_and_plot_policy(policy, env, as_goals=True, visualize=True, sampling_re
 
     with logger.tabular_prefix('Outer_'):
         logger.record_tabular('iter', itr)
-        logger.record_tabular('timeCost', time_spend)
         logger.record_tabular('MeanRewards', mean_rewards)
         logger.record_tabular('Success', success)
     # logger.dump_tabular(with_prefix=False)
@@ -354,8 +353,8 @@ def test_and_plot_policy(policy, env, as_goals=True, visualize=True, sampling_re
     if report is not None:
         report.add_image(
             reward_img,
-            'policy performance\nitr: {} \ntime cost: {} \nmean_rewards: {} \nsuccess: {}'.format(
-                itr, time_spend, mean_rewards, success
+            'policy performance\n itr: {} \nmean_rewards: {} \nsuccess: {}'.format(
+                itr, mean_rewards, success
             )
         )
         # report.add_image(
@@ -431,3 +430,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
