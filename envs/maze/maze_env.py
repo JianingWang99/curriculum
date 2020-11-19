@@ -68,13 +68,13 @@ class MazeEnv(ProxyEnv, Serializable):
         self.MAZE_HEIGHT = height = maze_height
         self.MAZE_SIZE_SCALING = size_scaling = maze_size_scaling
         self.MAZE_STRUCTURE = structure = construct_maze(maze_id=self._maze_id, length=self.length)
-        self.MAZE_STRUCTURE = structure = [
-        [1, 1, 1, 1, 1],
-        [1, 'r', 0, 'g', 1],
-        [1, 1, 1, 0, 1],
-        [1, 0, 0, 0, 1],
-        [1, 1, 1, 1, 1],
-        ]
+        # self.MAZE_STRUCTURE = structure = [
+        # [1, 1, 1, 1, 1],
+        # [1, 'r', 0, 'g', 1],
+        # [1, 1, 1, 0, 1],
+        # [1, 0, 0, 0, 1],
+        # [1, 1, 1, 1, 1],
+        # ]
         torso_x, torso_y = self._find_robot()
         self._init_torso_x = torso_x
         self._init_torso_y = torso_y

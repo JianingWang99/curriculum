@@ -87,7 +87,11 @@ def run_task(v):
     #critic network
     qf = ContinuousMLPQFunction(env_spec=env.spec)
 
-
+    pool = SimpleReplayPool(
+                max_pool_size=v['ddpg_replay_pool_size'],
+                observation_dim=env.observation_space.flat_dim,
+                action_dim=env.action_space.flat_dim,
+            )
     # baseline = LinearFeatureBaseline(env_spec=env.spec)
 
     # initialize all logging arrays on itr0
@@ -172,12 +176,13 @@ def run_task(v):
             )
 
             logger.log("Training the algorithm")
+
+            # pool = SimpleReplayPool(
+            #     max_pool_size=v['ddpg_replay_pool_size'],
+            #     observation_dim=env.observation_space.flat_dim,
+            #     action_dim=env.action_space.flat_dim,
+            # )
             # This seems like a rather sequential method
-            pool = SimpleReplayPool(
-                max_pool_size=v['ddpg_replay_pool_size'],
-                observation_dim=env.observation_space.flat_dim,
-                action_dim=env.action_space.flat_dim,
-            )
             print("ddpg policy param value before: ", policy.get_param_values())
             print("ddpg pool size, ", pool.size)
             algo = DDPG(
@@ -198,7 +203,7 @@ def run_task(v):
                 plot=False,
             )
             inner_begin_iter = (outer_iter-1)*v['inner_iters']+1
-            ddpg_paths = algo.train(itr=inner_begin_iter)
+            algo.train(itr=inner_begin_iter, goals=goals.tolist(), terminal_eps=v['terminal_eps'])
             print("ddpg policy param value after: ", policy.get_param_values())
             print("ddpg pool size, ", pool.size)
 

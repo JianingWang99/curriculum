@@ -65,7 +65,7 @@ if __name__ == '__main__':
     vg.add('label_with_variation', [False])
     vg.add('use_ddpg_paths', lambda label_with_variation: [False] if label_with_variation else [False])
     # replay buffer
-    vg.add('replay_buffer', [True])
+    vg.add('replay_buffer', [False])
     vg.add('coll_eps', [0.3])
     vg.add('num_new_goals', [200])
     vg.add('num_old_goals', [100])
@@ -73,10 +73,10 @@ if __name__ == '__main__':
     # sampling params
     vg.add('horizon', [500])
     vg.add('outer_iters', [500])
-    vg.add('inner_iters', [200])
-    vg.add('ddpg_batch_size', [256])
-    vg.add('ddpg_min_pool_size', [256])
-    vg.add('ddpg_replay_pool_size', [250000])
+    vg.add('inner_iters', [800])
+    vg.add('ddpg_batch_size', [128])
+    vg.add('ddpg_min_pool_size', [10000])
+    vg.add('ddpg_replay_pool_size', [1000000])
 
     # policy initialization
     vg.add('output_gain', [1])

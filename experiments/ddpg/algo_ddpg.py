@@ -11,7 +11,7 @@ import pickle as pickle
 import numpy as np
 import pyprind
 import lasagne
-
+import random
 
 def parse_update_method(update_method, **kwargs):
     if update_method == 'adam':
@@ -197,15 +197,88 @@ class DDPG(RLAlgorithm):
         parallel_sampler.populate_task(self.env, self.policy)
         if self.plot:
             plotter.init_plot(self.env, self.policy)
+    
+    def update_pool(self, goals, terminal_eps):
+        count = 0
+        print("ddpg goals length: ", len(goals))
+        g = random.choice(goals)
+        # print("first g: ", g)
+        last_goal = self.pool._observations[0][-2:]
+        for i in range(self.pool._size):
+            update = False
+            ob = self.pool._observations[i]
+            remove_goal_ob = ob[:-2]
+            goal = ob[-2:]
+            agent_pos = remove_goal_ob[-3: -1]
+            # print("==========================================================================")
+            # print(i, "ddpg agent pos, goal, dis, re: ", agent_pos, goal, np.linalg.norm(agent_pos - ob[-2:], ord=2), self.pool._rewards[i])
+            if np.array_equal(goal, last_goal):
+                dist = np.linalg.norm(agent_pos - g, ord=2) #L2
+                self.pool._observations[i] = np.concatenate([remove_goal_ob, np.array(g)])
+                if dist < terminal_eps:
+                    self.pool._rewards[i] = 1.0
+                    self.pool._terminals[i] = 1.0
+                else:
+                    self.pool._rewards[i] = 0.0
+                    self.pool._terminals[i] = 0.0
+                # print(i, "ddpg agent pos, goal, dis, re: ", self.pool._observations[i][:-2][-3: -1], self.pool._observations[i][-2:], dist, self.pool._rewards[i])
+            else:
+                g = random.choice(goals)
+                dist = np.linalg.norm(agent_pos - g, ord=2) #L2
+                last_goal = goal.copy()
+                self.pool._observations[i] = np.concatenate([remove_goal_ob, np.array(g)])
+                if dist < terminal_eps:
+                    self.pool._rewards[i] = 1.0
+                    self.pool._terminals[i] = 1.0
+                else:
+                    self.pool._rewards[i] = 0.0
+                    self.pool._terminals[i] = 0.0
+                # print(i, "ddpg agent pos, goal, dis, re: ", self.pool._observations[i][:-2][-3: -1], self.pool._observations[i][-2:], dist, self.pool._rewards[i])
+
+                
+        for i in range(self.pool._size):
+            if self.pool._rewards[i] == 1:
+                print("ddpg agent pos, goal, dis: ", self.pool._observations[i][:-2][-3: -1], self.pool._observations[i][-2:], np.linalg.norm(self.pool._observations[i][:-2][-3: -1] - self.pool._observations[i][-2:], ord=2))
+        
+            # if max_dist < terminal_eps:
+            #     max_dist_id =dist_list.index(max_dist)
+            #     new_g = goals[max_dist_id]
+            #     self.pool._observations[i] = np.concatenate([remove_goal_ob, np.array(new_g)])
+            #     self.pool._rewards[i] = 1.0
+            #     self.pool._terminals[i] = 1.0
+            #     print(i, " update pool agent pos, reached goal: ", agent_pos, g, dist)
+            #     update = True
+            #     count = count + 1
+
+                # if dist < terminal_eps:
+                #     self.pool._observations[i] = np.concatenate([remove_goal_ob, np.array(g)])
+                #     self.pool._rewards[i] = 1.0
+                #     self.pool._terminals[i] = 1.0
+                #     print(i, " ddpg update pool agent pos, reached goal: ", agent_pos, g, dist)
+                #     update = True
+                #     count = count + 1
+                #     break
+        #     if not update:
+        #         print(i, "ddpg no update...")
+        #         self.pool._observations[i] = np.concatenate([remove_goal_ob, np.array(goals[0])])
+        #         self.pool._rewards[i] = 0
+        #         self.pool._terminals[i] = 0
+        # print("ddpg pool update num: ", count)
+        # print("final update pos and reached goal: ", self.pool._observations[final_index][:-2][-3: -1], self.pool._observations[final_index][-2:])
+
+           
 
     @overrides
-    def train(self, itr=0):      
+    def train(self, itr, goals, terminal_eps):      
         itr = itr
         end_itr = itr + self.n_epochs
         path_length = 0
         path_return = 0
         terminal = False
         observation = self.env.reset()
+        # if self.pool._size > 0:
+        #     logger.log("Updata pool reward")
+        #     self.update_pool(goals=goals, terminal_eps=terminal_eps)
 
         # This seems like a rather sequential method
 
@@ -217,6 +290,7 @@ class DDPG(RLAlgorithm):
             sum_reward = 0
             for epoch_itr in pyprind.prog_bar(range(self.epoch_length)):
                 # self.env.render()
+                # print(epoch,"epoch,",epoch_itr," epoch_iter, ddpg goal",self.env.current_goal )
                 # Execute policy
                 if terminal:  # or path_length > self.max_path_length:
                     # Note that if the last time step ends an episode, the very
@@ -261,11 +335,11 @@ class DDPG(RLAlgorithm):
                 itr += 1
 
             logger.log("Training finished")
-            if self.pool.size >= self.min_pool_size:
-                paths = self.evaluate(epoch, self.pool)
-                params = self.get_epoch_snapshot(epoch)
-                logger.save_itr_params(epoch, params)
-            logger.dump_tabular(with_prefix=False)
+            # if self.pool.size >= self.min_pool_size:
+            #     paths = self.evaluate(epoch, self.pool)
+            #     params = self.get_epoch_snapshot(epoch)
+            #     logger.save_itr_params(epoch, params)
+            # logger.dump_tabular(with_prefix=False)
             logger.pop_prefix()
             # if self.plot:
             #     self.update_plot()
@@ -275,7 +349,7 @@ class DDPG(RLAlgorithm):
         print("inner policy after: ", self.policy.get_param_values())
         self.env.terminate()
         self.policy.terminate()
-        return paths
+        # return paths
 
     def init_opt(self):
 
