@@ -302,7 +302,7 @@ class DDPG(RLAlgorithm):
                     self.es_path_returns.append(path_return)
                     path_length = 0
                     path_return = 0
-                action = self.es.get_action(itr, observation, policy=sample_policy)  # qf=qf)
+                action = self.es.get_action(itr%self.n_epochs, observation, policy=sample_policy)  # qf=qf)
 
                 next_observation, reward, terminal, info = self.env.step(action) # if reach the goal then reward is 1 else 0.
                 # print("ddpg reward and goal reach: ", reward, ' ,', info['goal_reached'], ' ,', next_observation[-3:-1])
