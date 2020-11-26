@@ -44,18 +44,16 @@ class SimpleReplayPool(object):
         self._rewards = np.zeros(max_pool_size)
         self._terminals = np.zeros(max_pool_size, dtype='uint8')
         self._epochs = np.zeros(max_pool_size)
-        self._episodes = np.zeros(max_pool_size)
         self._bottom = 0
         self._top = 0
         self._size = 0
 
-    def add_sample(self, observation, action, reward, terminal, epoch, episode):
+    def add_sample(self, observation, action, reward, terminal, epoch):
         self._observations[self._top] = observation
         self._actions[self._top] = action
         self._rewards[self._top] = reward
         self._terminals[self._top] = terminal
         self._epochs[self._top] = epoch
-        self._episodes[self._top] = episode
         self._top = (self._top + 1) % self._max_pool_size
         if self._size >= self._max_pool_size:
             self._bottom = (self._bottom + 1) % self._max_pool_size
@@ -88,12 +86,12 @@ class SimpleReplayPool(object):
             next_observations=self._observations[transition_indices]
         )
 
-    def replay_her(self, epoch, episode, time_steps):
-        if epoch == 0 and episode == 0:
+    def replay_her(self, epoch, time_steps):
+        if epoch == 0:
             indices = np.array([x for x in range(time_steps)])
         else:
             indices = np.zeros(time_steps, dtype='uint64')
-            indices, = np.where(np.logical_and(self._epochs == epoch, self._episodes == episode))
+            indices, = np.where(self._epochs == epoch)
             
         return dict(
             observations=self._observations[indices],
@@ -117,10 +115,10 @@ class HER(RLAlgorithm):
             policy,
             qf,
             es,
+            pool,
             batch_size=32,
             n_epochs=200,
-            n_episodes=100,
-            time_steps=1000,
+            epoch_length=1000,
             min_pool_size=10000,
             replay_pool_size=1000000,
             discount=0.99,
@@ -146,8 +144,7 @@ class HER(RLAlgorithm):
         :param es: Exploration strategy
         :param batch_size: Number of samples for each minibatch.
         :param n_epochs: Number of epochs. Policy will be evaluated after each epoch.
-        :param n_episode: Number of episode for each epoch.
-        :param time_steps: How many timesteps for each episode.
+        :param epoch_length: How many timesteps for each epoch.
         :param min_pool_size: Minimum size of the pool to start training.
         :param replay_pool_size: Size of the experience replay pool.
         :param discount: Discount factor for the cumulative return.
@@ -172,10 +169,10 @@ class HER(RLAlgorithm):
         self.policy = policy
         self.qf = qf
         self.es = es
+        self.pool = pool
         self.batch_size = batch_size
         self.n_epochs = n_epochs
-        self.n_episodes = n_episodes
-        self.time_steps = time_steps
+        self.epoch_length = epoch_length
         self.min_pool_size = min_pool_size
         self.replay_pool_size = replay_pool_size
         self.discount = discount
@@ -216,6 +213,10 @@ class HER(RLAlgorithm):
 
         self.opt_info = None
 
+        self.start_worker()
+
+        self.init_opt()
+
     def start_worker(self):
         parallel_sampler.populate_task(self.env, self.policy)
         if self.plot:
@@ -232,8 +233,8 @@ class HER(RLAlgorithm):
             raise NotImplementedError('Unsupported environment')
 
 
-    def her_replay(self, epoch, episode, pool):
-        replay_batch = pool.replay_her(epoch, episode, self.time_steps-1)
+    def her_replay(self, epoch, pool):
+        replay_batch = pool.replay_her(epoch, self.epoch_length-1)
         
         replay_observations = replay_batch["observations"]
         replay_actions = replay_batch["actions"]
@@ -251,93 +252,82 @@ class HER(RLAlgorithm):
         self.achieved_goal_y_list.append(achieved_goal[1])
         
         #try1: at least distance bigger than 1.
-        if self.env.dist_to_initial(achieved_observation) >= 1:  
-            logger.log(" Achieved Goal %s" % ' '.join(map(str, achieved_goal)))         
-            # update achieved goal to the environment
-            self.env.update_goal(goal=achieved_goal)
-            new_observation = np.zeros(replay_observations[0].shape)
-            # print("her replay begin.")
-            for i in range(len(replay_actions)):
-                new_observation = replay_observations[i][:-2]
-                new_reward = 1.0 * self.env.is_goal_reached(new_observation)
-                new_observation = np.concatenate([new_observation, np.array(achieved_goal)])
-                pool.add_sample(new_observation, replay_actions[i], new_reward, replay_terminals[i], epoch, episode)
+        # if self.env.dist_to_initial(achieved_observation) >= 1:  
+        logger.log(" Achieved Goal %s" % ' '.join(map(str, achieved_goal)))         
+        # update achieved goal to the environment
+        self.env.update_goal(goal=achieved_goal)
+        new_observation = np.zeros(replay_observations[0].shape)
+        # print("her replay begin.")
+        for i in range(len(replay_actions)):
+            new_observation = replay_observations[i][:-2]
+            new_reward = 1.0 * self.env.is_goal_reached(new_observation)
+            new_observation = np.concatenate([new_observation, np.array(achieved_goal)])
+            pool.add_sample(new_observation, replay_actions[i], new_reward, replay_terminals[i], epoch)
             
 
     @overrides
-    def train(self):
+    def train(self, itr):
         # This seems like a rather sequential method
-        pool = SimpleReplayPool(
-            max_pool_size=self.replay_pool_size,
-            observation_dim=self.env.observation_space.flat_dim,
-            action_dim=self.env.action_space.flat_dim,   
-        )
-        
-    
-        self.start_worker()
-
-        self.init_opt()
-        itr = 0
+        # pool = SimpleReplayPool(
+        #     max_pool_size=self.replay_pool_size,
+        #     observation_dim=self.env.observation_space.flat_dim,
+        #     action_dim=self.env.action_space.flat_dim,   
+        # )
+        itr = itr
+        end_itr = itr + self.n_epochs
+        # itr = 0
         path_length = 0
         path_return = 0
         terminal = False
         observation = self.env.reset()
         final_goal = self.get_current_goal()
         sample_policy = pickle.loads(pickle.dumps(self.policy))
+        print("inner policy begin: ", sample_policy.get_param_values())
 
-        for epoch in range(self.n_epochs):
-            logger.push_prefix('epoch #%d | ' % epoch)
+        for epoch in range(itr, end_itr):
+            logger.push_prefix('inner_epoch #%d | ' % epoch)
             logger.log("Training started")
+            for t_step in pyprind.prog_bar(range(self.epoch_length)):
+                # self.env.render()
+                # Execute policy
+                if terminal:  # or path_length > self.max_path_length:
+                    # Note that if the last time step ends an episode, the very
+                    # last state and observation will be ignored and not added
+                    # to the replay pool
+                    observation = self.env.reset()
+                    self.es.reset()
+                    sample_policy.reset()
+                    self.es_path_returns.append(path_return)
+                    path_length = 0
+                    path_return = 0
+                action = self.es.get_action(itr%self.n_epochs, observation, policy=sample_policy)  # qf=qf)
 
-            for episode in pyprind.prog_bar(range(self.n_episodes)):
-            
-                for t_step in range(self.time_steps):
-                    # self.env.render()
-                    # Execute policy
-                    if terminal:  # or path_length > self.max_path_length:
-                        # Note that if the last time step ends an episode, the very
-                        # last state and observation will be ignored and not added
-                        # to the replay pool
-                        observation = self.env.reset()
-                        self.es.reset()
-                        sample_policy.reset()
-                        self.es_path_returns.append(path_return)
-                        path_length = 0
-                        path_return = 0
-                    action = self.es.get_action(itr, observation, policy=sample_policy)  # qf=qf)
+                next_observation, reward, terminal, info = self.env.step(action)
+                
+                path_length += 1
+                path_return += reward
 
-                    next_observation, reward, terminal, info = self.env.step(action)
+                if not terminal and path_length >= self.max_path_length:
+                    terminal = True
+                    # only include the terminal transition in this case if the flag was set
+                    if self.include_horizon_terminal_transitions:
+                        self.pool.add_sample(observation, action, reward * self.scale_reward, terminal, epoch)
+                else:
+                    self.pool.add_sample(observation, action, reward * self.scale_reward, terminal, epoch)
 
-                    reward = info['goal_reached'] # if reach the goal then reward is 1 else 0.
-                    if reward == 0:
-                        terminal = False
-                    else:
-                        terminal = True
-                    
-                    path_length += 1
-                    path_return += reward
-
-                    if not terminal and path_length >= self.max_path_length:
-                        terminal = True
-                        # only include the terminal transition in this case if the flag was set
-                        if self.include_horizon_terminal_transitions:
-                            pool.add_sample(observation, action, reward * self.scale_reward, terminal, epoch, episode)
-                    else:
-                        pool.add_sample(observation, action, reward * self.scale_reward, terminal, epoch, episode)
-
-                    observation = next_observation
-                    
-                    #Hindsight Experience Replay
-                    if t_step == self.time_steps - 1:
-                        self.her_replay(epoch, episode, pool)
-                        #change the goal back to desired goal
-                        self.env.update_goal(goal=final_goal) 
+                observation = next_observation
+                
+                #Hindsight Experience Replay
+                if t_step == self.epoch_length - 1:
+                    self.her_replay(epoch, self.pool)
+                    #change the goal back to desired goal
+                    self.env.update_goal(goal=final_goal) 
 
 
-                if pool.size >= self.min_pool_size:
+                if self.pool.size >= self.min_pool_size:
                     for update_itr in range(self.n_updates_per_sample):
                         # Train policy
-                        batch = pool.random_batch(self.batch_size)
+                        batch = self.pool.random_batch(self.batch_size)
                         self.do_training(itr, batch)
                     sample_policy.set_param_values(self.policy.get_param_values())
 
@@ -345,17 +335,18 @@ class HER(RLAlgorithm):
             
            
             logger.log("Training finished")
-            if pool.size >= self.min_pool_size:
-                self.evaluate(epoch, pool)
-                params = self.get_epoch_snapshot(epoch)
-                logger.save_itr_params(epoch, params)
-            logger.dump_tabular(with_prefix=False)
+            # if self.pool.size >= self.min_pool_size:
+            #     self.evaluate(epoch, self.pool)
+            #     params = self.get_epoch_snapshot(epoch)
+            #     logger.save_itr_params(epoch, params)
+            # logger.dump_tabular(with_prefix=False)
             logger.pop_prefix()
-            if self.plot:
-                self.update_plot()
-                if self.pause_for_plot:
-                    input("Plotting evaluation run: Press Enter to "
-                              "continue...")
+            # if self.plot:
+            #     self.update_plot()
+            #     if self.pause_for_plot:
+            #         input("Plotting evaluation run: Press Enter to "
+            #                   "continue...")
+        print("inner policy after: ", self.policy.get_param_values())
         self.env.terminate()
         self.policy.terminate()
 

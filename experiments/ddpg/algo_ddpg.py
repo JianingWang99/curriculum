@@ -287,7 +287,7 @@ class DDPG(RLAlgorithm):
         for epoch in range(itr, end_itr):
             logger.push_prefix('inner_epoch #%d | ' % epoch)
             logger.log("Training started")
-            sum_reward = 0
+            
             for epoch_itr in pyprind.prog_bar(range(self.epoch_length)):
                 # self.env.render()
                 # print(epoch,"epoch,",epoch_itr," epoch_iter, ddpg goal",self.env.current_goal )
@@ -302,13 +302,10 @@ class DDPG(RLAlgorithm):
                     self.es_path_returns.append(path_return)
                     path_length = 0
                     path_return = 0
-                action = self.es.get_action(itr, observation, policy=sample_policy)  # qf=qf)
+                action = self.es.get_action(itr%self.n_epochs, observation, policy=sample_policy)  # qf=qf)
 
                 next_observation, reward, terminal, info = self.env.step(action) # if reach the goal then reward is 1 else 0.
                 # print("ddpg reward and goal reach: ", reward, ' ,', info['goal_reached'], ' ,', next_observation[-3:-1])
-                
-                
-                sum_reward = sum_reward + reward
                 
                 path_length += 1
                 path_return += reward

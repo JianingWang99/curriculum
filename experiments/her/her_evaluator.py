@@ -313,7 +313,7 @@ def rollout(env, policy, es, max_path_length=np.inf, animated=False, speedup=1, 
     if animated:
         env.render()
     while path_length < max_path_length:
-        a = es.get_action(1 , o, policy=policy)
+        a = es.get_action(100000 , o, policy=policy)
 
         if no_action:
             a = np.zeros_like(a)

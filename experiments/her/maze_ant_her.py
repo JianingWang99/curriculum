@@ -53,10 +53,10 @@ if __name__ == '__main__':
     exp_prefix = 'new2-her-maze-ant'
 
     vg = VariantGenerator()
+    vg.add('maze_id', [0])
     vg.add('goal_size', [2])  # this is the ultimate goal we care about: getting the pendulum upright
     vg.add('terminal_eps', [1])
-    vg.add('only_feasible', [False])
-    vg.add('maze_id', [0])
+    vg.add('only_feasible', [True])
     vg.add('goal_range',
            lambda maze_id: [5] if maze_id == 0 else [7])  # this will be used also as bound of the state_space
     vg.add('goal_center', lambda maze_id: [(2, 2)] if maze_id == 0 else [(0, 0)])
@@ -64,7 +64,7 @@ if __name__ == '__main__':
     vg.add('min_reward', [0])
     vg.add('max_reward', [1])
     vg.add('distance_metric', ['L2'])
-    vg.add('extend_dist_rew', [True])  # !!!!
+    vg.add('extend_dist_rew', [False])  # !!!!
     vg.add('persistence', [1])
     vg.add('n_traj', [3])  # only for labeling and plotting (for now, later it will have to be equal to persistence!)
     vg.add('with_replacement', [False])
@@ -74,17 +74,19 @@ if __name__ == '__main__':
 
     # sampling params
     vg.add('horizon', lambda maze_id: [500]) 
-    # vg.add('outer_iters', lambda maze_id: [500])
-    vg.add('epoch_num', [500]) 
-    vg.add('episode_num',[5])
-    vg.add('pg_batch_size', [128]) #32, 64, 128
+    vg.add('outer_iters', [500])
+    vg.add('inner_iters', [1000])
+    vg.add('ddpg_batch_size', [128])
+    vg.add('ddpg_min_pool_size', [10000])
+    vg.add('ddpg_replay_pool_size', [1000000])
     # policy initialization
     vg.add('output_gain', [1])
     vg.add('policy_init_std', [1])
     vg.add('learn_std', [True])
     vg.add('adaptive_std', [False])
 
-    vg.add('seed', range(400, 540, 20))
+    # vg.add('seed', range(400, 540, 20))
+    vg.add('seed', range(1000, 2000, 100))
 
     # # gan_configs
     # vg.add('GAN_batch_size', [128])  # proble with repeated name!!

@@ -19,11 +19,12 @@ os.environ['THEANO_FLAGS'] = 'floatX=float32,device=cpu'
 os.environ['CUDA_VISIBLE_DEVICES'] = ''
 
 from curriculum.experiments.ddpg.algo_ddpg import DDPG, SimpleReplayPool
-from rllab.baselines.linear_feature_baseline import LinearFeatureBaseline
+# from rllab.baselines.linear_feature_baseline import LinearFeatureBaseline
 from rllab.envs.normalized_env import normalize
 # from rllab.policies.gaussian_mlp_policy import GaussianMLPPolicy
 from rllab.policies.deterministic_mlp_policy import DeterministicMLPPolicy
 from rllab.exploration_strategies.ou_strategy import OUStrategy
+from rllab.exploration_strategies.gaussian_strategy import GaussianStrategy
 from rllab.q_functions.continuous_mlp_q_function import ContinuousMLPQFunction
 
 from curriculum.experiments.her.her_evaluator import label_states, label_states_from_paths
@@ -83,7 +84,8 @@ def run_task(v):
     )
     print("ddpg initial policy param value: ", policy.get_param_values())
     #for ddpg: exploration strategy
-    es = OUStrategy(env_spec = env.spec)
+    # es = OUStrategy(env_spec = env.spec)
+    es = GaussianStrategy(env_spec = env.spec)
     #critic network
     qf = ContinuousMLPQFunction(env_spec=env.spec)
 
