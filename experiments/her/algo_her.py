@@ -19,6 +19,10 @@ import numpy as np
 import pyprind
 import lasagne
 
+import random
+
+from curriculum.experiments.her.her_evaluator import label_states, convert_label
+
 
 def parse_update_method(update_method, **kwargs):
     if update_method == 'adam':
@@ -111,6 +115,7 @@ class HER(RLAlgorithm):
 
     def __init__(
             self,
+            v,
             env,
             policy,
             qf,
@@ -121,9 +126,9 @@ class HER(RLAlgorithm):
             epoch_length=1000,
             min_pool_size=10000,
             replay_pool_size=1000000,
-            discount=0.99,
+            discount=0.98,
             max_path_length=250,
-            qf_weight_decay=0.,
+            qf_weight_decay=0,
             qf_update_method='adam',
             qf_learning_rate=1e-3,
             policy_weight_decay=0,
@@ -165,6 +170,7 @@ class HER(RLAlgorithm):
         :param pause_for_plot: Whether to pause before continuing when plotting.
         :return:
         """
+        self.v = v
         self.env = env
         self.policy = policy
         self.qf = qf
@@ -217,6 +223,9 @@ class HER(RLAlgorithm):
 
         self.init_opt()
 
+        random.seed(v['seed'])
+        np.random.seed(v['seed'])
+
     def start_worker(self):
         parallel_sampler.populate_task(self.env, self.policy)
         if self.plot:
@@ -240,27 +249,50 @@ class HER(RLAlgorithm):
         replay_actions = replay_batch["actions"]
         replay_terminals = replay_batch["terminals"]
 
+        # new_goal = []
         # sample the goals for replay
-        #choose final state as goal
+        # for i in range(int(len(replay_actions)/2)): #change to reverse
+        #     indeces = [2*i, 2*i+1]
+        #     agent_pos = []
+        #     for j in indeces:
+        #         ag_pos = replay_observations[j][:-2][-3: -1]
+        #         agent_pos.append(ag_pos.tolist())
+        #     agent_pos = np.array(agent_pos)
+        #     # print("agent pos: ", agent_pos)
+        #     labels = label_states(agent_pos, self.env, self.policy, self.es, self.epoch_length, n_traj=3, key='goal_reached')
+        #     init_classes, _ = convert_label(labels)
+        #     new_goal = agent_pos[init_classes == 2]
+        #     if len(new_goal) > 0:
+        #         if len(new_goal) > 1:
+        #             new_goal = new_goal[0]
+        #         break
+        
+        # if len(new_goal) > 0:
+        #     new_goal = new_goal.reshape((2,))
+        #     achieved_goal = new_goal
+        # else:
+        # choose final state as goal
         achieved_observation_index = len(replay_actions) - 1
         achieved_observation = replay_observations[achieved_observation_index]
         achieved_observation = achieved_observation[:-2]
         
         #get the agent position
         achieved_goal = achieved_observation[-3: -1]
-        self.achieved_goal_x_list.append(achieved_goal[0])
-        self.achieved_goal_y_list.append(achieved_goal[1])
+        # self.achieved_goal_x_list.append(achieved_goal[0])
+        # self.achieved_goal_y_list.append(achieved_goal[1])
         
-        #try1: at least distance bigger than 1.
-        # if self.env.dist_to_initial(achieved_observation) >= 1:  
+        # #try1: at least distance bigger than 1.
+        # # if self.env.dist_to_initial(achieved_observation) >= 1:  
         logger.log(" Achieved Goal %s" % ' '.join(map(str, achieved_goal)))         
         # update achieved goal to the environment
-        self.env.update_goal(goal=achieved_goal)
+        # self.env.update_goal(goal=achieved_goal)
+
         new_observation = np.zeros(replay_observations[0].shape)
         # print("her replay begin.")
         for i in range(len(replay_actions)):
             new_observation = replay_observations[i][:-2]
-            new_reward = 1.0 * self.env.is_goal_reached(new_observation)
+            a_pos = new_observation[-3: -1]
+            new_reward = 1.0 * (np.linalg.norm(a_pos - achieved_goal, ord=2) < 1)
             new_observation = np.concatenate([new_observation, np.array(achieved_goal)])
             pool.add_sample(new_observation, replay_actions[i], new_reward, replay_terminals[i], epoch)
             
@@ -300,7 +332,12 @@ class HER(RLAlgorithm):
                     self.es_path_returns.append(path_return)
                     path_length = 0
                     path_return = 0
+
                 action = self.es.get_action(itr%self.n_epochs, observation, policy=sample_policy)  # qf=qf)
+                
+                #20% random action
+                random_actions = np.random.uniform(low = self.env.spec.action_space.low, high = self.env.spec.action_space.high, size = self.env.action_space.flat_dim)
+                action += np.random.binomial(1, 0.2, action.shape[0]) * (random_actions-action)
 
                 next_observation, reward, terminal, info = self.env.step(action)
                 
@@ -321,7 +358,7 @@ class HER(RLAlgorithm):
                 if t_step == self.epoch_length - 1:
                     self.her_replay(epoch, self.pool)
                     #change the goal back to desired goal
-                    self.env.update_goal(goal=final_goal) 
+                    # self.env.update_goal(goal=final_goal) 
 
 
                 if self.pool.size >= self.min_pool_size:

@@ -75,8 +75,8 @@ if __name__ == '__main__':
     # sampling params
     vg.add('horizon', lambda maze_id: [500]) 
     vg.add('outer_iters', [500])
-    vg.add('inner_iters', [1000])
-    vg.add('ddpg_batch_size', [128])
+    vg.add('inner_iters', [800])
+    vg.add('ddpg_batch_size', [256])
     vg.add('ddpg_min_pool_size', [10000])
     vg.add('ddpg_replay_pool_size', [1000000])
     # policy initialization

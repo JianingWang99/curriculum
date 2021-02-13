@@ -24,7 +24,7 @@ from rllab.envs.normalized_env import normalize
 # from rllab.policies.gaussian_mlp_policy import GaussianMLPPolicy
 from rllab.policies.deterministic_mlp_policy import DeterministicMLPPolicy
 from rllab.exploration_strategies.ou_strategy import OUStrategy
-from rllab.exploration_strategies.gaussian_strategy import GaussianStrategy
+# from rllab.exploration_strategies.gaussian_strategy import GaussianStrategy
 from rllab.q_functions.continuous_mlp_q_function import ContinuousMLPQFunction
 
 from curriculum.experiments.her.her_evaluator import label_states, label_states_from_paths
@@ -36,10 +36,46 @@ from curriculum.envs.goal_env import GoalExplorationEnv, ddpg_generate_initial_g
 from curriculum.experiments.ddpg.ddpg_maze_evaluate import test_and_plot_policy  # TODO: make this external to maze env
 from curriculum.envs.maze.maze_ant.ant_maze_env import AntMazeEnv  # we need to use our maze with is_feas
 
+from rllab.core.serializable import Serializable
+from rllab.spaces.box import Box
+from rllab.exploration_strategies.base import ExplorationStrategy
+import numpy as np
 
 EXPERIMENT_TYPE = osp.basename(__file__).split('.')[0]
 
 sampling_res = 2
+
+
+class GaussianStrategy(ExplorationStrategy, Serializable):
+    """
+    This strategy adds Gaussian noise to the action taken by the deterministic policy.
+    """
+
+    def __init__(self, env_spec, max_sigma=1.0, min_sigma=0.1, decay_period=1000000):
+        assert isinstance(env_spec.action_space, Box)
+        assert len(env_spec.action_space.shape) == 1
+        Serializable.quick_init(self, locals())
+        self._max_sigma = max_sigma
+        self._min_sigma = min_sigma
+        self._decay_period = decay_period
+        self._action_space = env_spec.action_space
+
+    def get_action(self, t, observation, policy, **kwargs):
+        action, agent_info = policy.get_action(observation)
+        # sigma = self._max_sigma - (self._max_sigma - self._min_sigma) * min(1.0, t * 1.0) / self._decay_period
+        # return np.clip(action + np.random.normal(size=len(action)) * sigma, self._action_space.low,
+        #                self._action_space.high)
+        if t == 1000000:
+            sigma = 0.1
+            return np.clip(action + np.random.normal(size=len(action)) * sigma, self._action_space.low,
+                       self._action_space.high)
+
+        if random.uniform(0, 1) <= 0.2:
+            return np.clip(np.random.normal(size=len(action)), self._action_space.low,
+                       self._action_space.high)
+        else:
+            return action
+
 
 
 

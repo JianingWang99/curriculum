@@ -103,10 +103,10 @@ class DDPG(RLAlgorithm):
             max_path_length=250,
             qf_weight_decay=0.,
             qf_update_method='adam',
-            qf_learning_rate=1e-3,
+            qf_learning_rate=0.0004,
             policy_weight_decay=0,
             policy_update_method='adam',
-            policy_learning_rate=1e-3,
+            policy_learning_rate=0.0004,
             eval_samples=10000,
             soft_target=True,
             soft_target_tau=0.001,
@@ -385,6 +385,8 @@ class DDPG(RLAlgorithm):
             deterministic=True
         )
         policy_surr = -TT.mean(policy_qval)
+        #add value here to avoid vanishing gradient, "self.policy.get_action_sym(obs) - > gets real actions"
+        # policy_surr += TT.mean(TT.pow(self.policy.get_action_sym(obs), 2))
 
         policy_reg_surr = policy_surr + policy_weight_decay_term
 

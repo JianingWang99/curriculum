@@ -34,7 +34,7 @@ from curriculum.state.generator import StateGAN
 from curriculum.state.utils import StateCollection
 
 from curriculum.envs.goal_env import GoalExplorationEnv, generate_initial_goals
-from curriculum.experiments.ddpg.ddpg_maze_evaluate import test_and_plot_policy  # TODO: make this external to maze env
+from curriculum.experiments.ddpg.ddpg_maze_evaluate import test_and_plot_policy, sample_unif_feas  # TODO: make this external to maze env
 from curriculum.envs.maze.maze_ant.ant_maze_env import AntMazeEnv
 
 EXPERIMENT_TYPE = osp.basename(__file__).split('.')[0]
@@ -44,6 +44,7 @@ def run_task(v):
     random.seed(v['seed'])
     np.random.seed(v['seed'])
     sampling_res = 2 if 'sampling_res' not in v.keys() else v['sampling_res']
+    samples_per_cell = 10
 
     # Log performance of randomly initialized policy with FIXED goal [0.1, 0.1]
     logger.log("Initializing report and plot_policy_reward...")
@@ -57,12 +58,12 @@ def run_task(v):
 
     inner_env = normalize(AntMazeEnv(maze_id=v['maze_id']))
 
-    fixed_goal_generator = FixedStateGenerator(v['final_goal'])
-    # uniform_goal_generator = UniformStateGenerator(state_size=v['goal_size'], bounds=v['goal_range'],
-    #                                                center=v['goal_center'])
+    # fixed_goal_generator = FixedStateGenerator(v['final_goal'])
+    uniform_goal_generator = UniformStateGenerator(state_size=v['goal_size'], bounds=v['goal_range'],
+                                                   center=v['goal_center'])
 
     env = GoalExplorationEnv(
-        env=inner_env, goal_generator=fixed_goal_generator,
+        env=inner_env, goal_generator=uniform_goal_generator,
         obs2goal_transform=lambda x: x[-3:-1],
         terminal_eps=v['terminal_eps'],
         distance_metric=v['distance_metric'],
@@ -97,54 +98,57 @@ def run_task(v):
     report.new_row()
 
     for outer_iter in range(1, v['outer_iters']):
-
         logger.log("Outer itr # %i" % outer_iter)
-        # with ExperimentLogger(log_dir, 'last', snapshot_mode='last', hold_outter_log=True):
-        #     logger.log("Updating the environment goal generator")
-        #     if v['unif_goals']:
-        #         env.update_goal_generator(
-        #             UniformListStateGenerator(
-        #                 goals.tolist(), persistence=v['persistence'], with_replacement=v['with_replacement'],
-        #             )
-        #         )
-        #     else:
-        #         env.update_goal_generator(FixedStateGenerator(v['final_goal']))
 
-        logger.log("Training the algorithm")
+        goals = sample_unif_feas(env, samples_per_cell=samples_per_cell)
 
-        print("ddpg policy param value before: ", policy.get_param_values())
-        print("ddpg pool size, ", pool.size)
-        
-        algo = HER(
-            env=env,
-            es = es,
-            qf = qf,   
-            policy=policy,
-            pool=pool,
-            batch_size=v['ddpg_batch_size'],
-            max_path_length=v['horizon'],
-            n_epochs=v['inner_iters'],
-            epoch_length=v['horizon'],
-            min_pool_size=v['ddpg_min_pool_size'],
-            replay_pool_size=v['ddpg_replay_pool_size'],
-            plot = False,
-        )
-        inner_begin_iter = (outer_iter-1)*v['inner_iters']+1
-        algo.train(itr=inner_begin_iter)
+        with ExperimentLogger(log_dir, 'last', snapshot_mode='last', hold_outter_log=True):
+            logger.log("Updating the environment goal generator")
+            if v['unif_goals']:
+                env.update_goal_generator(
+                    UniformListStateGenerator(
+                        goals.tolist(), persistence=v['persistence'], with_replacement=v['with_replacement'],
+                    )
+                )
+            else:
+                env.update_goal_generator(FixedStateGenerator(v['final_goal']))
 
-        print("ddpg policy param value after: ", policy.get_param_values())
-        print("ddpg pool size, ", pool.size)
+            logger.log("Training the algorithm")
+
+            print("ddpg policy param value before: ", policy.get_param_values())
+            print("ddpg pool size, ", pool.size)
+            
+            algo = HER(
+                v=v,
+                env=env,
+                es = es,
+                qf = qf,   
+                policy=policy,
+                pool=pool,
+                batch_size=v['ddpg_batch_size'],
+                max_path_length=v['horizon'],
+                n_epochs=v['inner_iters'],
+                epoch_length=v['horizon'],
+                min_pool_size=v['ddpg_min_pool_size'],
+                replay_pool_size=v['ddpg_replay_pool_size'],
+                plot = False,
+            )
+            inner_begin_iter = (outer_iter-1)*v['inner_iters']+1
+            algo.train(itr=inner_begin_iter)
+
+            print("ddpg policy param value after: ", policy.get_param_values())
+            print("ddpg pool size, ", pool.size)
 
 
         logger.log('Generating the Heatmap...')
         test_and_plot_policy(policy, es, env, max_reward=v['max_reward'], sampling_res=sampling_res, n_traj=v['n_traj'],
                              itr=outer_iter, report=report, limit=v['goal_range'], center=v['goal_center'])
 
-        # logger.log("Labeling the goals")
-        # labels = label_states(goals, env, policy, v['horizon'], n_traj=v['n_traj'], key='goal_reached')
+        logger.log("Labeling the goals")
+        labels = label_states(goals, env, policy, es, v['horizon'], n_traj=v['n_traj'], key='goal_reached')
 
-        # plot_labeled_states(goals, labels, report=report, itr=outer_iter, limit=v['goal_range'],
-        #                     center=v['goal_center'], maze_id=v['maze_id'])
+        plot_labeled_states(goals, labels, report=report, itr=outer_iter, limit=v['goal_range'],
+                            center=v['goal_center'], maze_id=v['maze_id'])
 
         # ###### extra for deterministic:
         # logger.log("Labeling the goals deterministic")
