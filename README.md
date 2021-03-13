@@ -3,3 +3,7 @@ This is an extension from https://github.com/florensacc/rllab-curriculum. git cl
 ```bash 
 python curriculum/experiments/ddpg/maze_ant_ddpg_gan.py
 ```
+- train the her DDPG policy with U-Maze Ant environment<br />
+```bash 
+python curriculum/experiments/her_maze_ant/maze_ant_ddpg.py
+```
